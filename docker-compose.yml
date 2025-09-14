@@ -1,0 +1,30 @@
+version: "3.8"
+
+services:
+  backend:
+    build: ./project/backend
+    container_name: flask-backend
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    volumes:
+      - ./project/backend:/app
+    networks:
+      - app-network
+
+  frontend:
+    build: ./project/frontend
+    container_name: react-frontend
+    ports:
+      - "3000:3000"
+    stdin_open: true
+    tty: true
+    volumes:
+      - ./project/frontend:/app
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
