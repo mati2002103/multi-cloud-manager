@@ -2,6 +2,7 @@ from flask import Flask, session, redirect, url_for, jsonify
 from dotenv import load_dotenv
 import os
 import auth
+import requests
 
 # Load environment variables
 load_dotenv()
@@ -23,6 +24,11 @@ def api_user():
         return jsonify({"logged_in": False}), 200
     return jsonify({"logged_in": True, "name": user.get("name")}), 200
 
+@app.route("/api/accounts")
+def api_accounts():
+    """Zwraca listę wszystkich zalogowanych kont"""
+    users = session.get("users", [])
+    return jsonify(users), 200
 
 @app.route("/api/login")
 def login():
@@ -35,7 +41,7 @@ def authorized():
     """Obsługa powrotu z Microsoft i zapisanie sesji"""
     result = auth.acquire_token()
     if not result:
-        return jsonify({"error": "Nie udało się zalogować"}), 401
+        return jsonify({"error": "Nie udalo sie zalogowac"}), 401
     return redirect(FRONTEND_URL + "/dashboard")
 
 
@@ -44,6 +50,17 @@ def logout():
     """Czyści sesję i wylogowuje"""
     session.clear()
     return jsonify({"message": "Wylogowano"}), 200
+
+@app.route("/api/subscriptions")
+def api_subscriptions():
+    token = auth.acquire_subscription_token()
+    if not token:
+        return jsonify({"error": "Brak tokenu"}), 401
+
+    headers = {"Authorization": f"Bearer {token}"}
+    url = "https://management.azure.com/subscriptions?api-version=2020-01-01"
+    resp = requests.get(url, headers=headers)
+    return jsonify(resp.json()), resp.status_code
 
 
 if __name__ == "__main__":

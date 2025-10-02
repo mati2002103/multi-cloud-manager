@@ -41,7 +41,6 @@ const Sidebar = ({ onLogout }) => {
 const styles = {
 
   sidebar: {
-    position: "fixed",
     width: "220px",
     height: "100vh",
     backgroundColor: "#1a202c",
