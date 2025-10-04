@@ -8,6 +8,7 @@ const Sidebar = ({ onLogout }) => {
     { name: "Dashboard", path: "/dashboard" },
     { name: "Maszyny Wirtualne", path: "/virtual-machines" },
     { name: "Kontenery", path: "/containers" },
+    { name: "Sieci", path: "/networks" },
     { name: "Subskrypcje", path: "/subscriptions" },
     { name: "Użytkownicy", path: "/Accounts" },
   ];

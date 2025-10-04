@@ -6,6 +6,8 @@ import VirtualMachines from "./pages/VirtualMachines";
 import Containers from "./pages/Containers";
 import Subscriptions from "./pages/Subscriptions";
 import Accounts from "./pages/Accounts";
+import Networks from "./pages/Networks";
+
 import Home from "./pages/Home"; // 🔥 Landing Page
 
 function App() {
@@ -42,6 +44,7 @@ function App() {
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/virtual-machines" element={<VirtualMachines />} />
                     <Route path="/containers" element={<Containers />} />
+                    <Route path="/networks" element={<Networks />} />
                     <Route path="/subscriptions" element={<Subscriptions />} />
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />

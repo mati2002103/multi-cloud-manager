@@ -1,12 +1,19 @@
 from flask import Flask, session, redirect, jsonify, request
+from flask_cors import CORS
+
+
 from dotenv import load_dotenv
 import os
 import auth
+
 from azure.identity import ClientSecretCredential
 from azure.core.credentials import AccessToken,TokenCredential
 from azure.mgmt.subscription import SubscriptionClient
 from azure.mgmt.resource import ResourceManagementClient
-from flask_cors import CORS
+from azure.mgmt.compute import ComputeManagementClient
+from azure.mgmt.network import NetworkManagementClient
+
+
 
 
 
@@ -127,30 +134,186 @@ def api_resource_groups():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-@app.route("/api/create_rg")
-def api_create_resource_groups():
+@app.route("/api/create_rg", methods=["POST"])
+def api_create_resource_group():
     if "access_token" not in session:
         return jsonify({"error": "Unauthorized"}), 401
-    sub_client = SubscriptionClient(credential)
+
+    data = request.get_json()
+    subscription_id = data.get("subscriptionId")
+    rg_name = data.get("rgName")
+    location = data.get("location")
+
+    if not all([subscription_id, rg_name, location]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
     credential = FlaskCredential()
-    for sub in sub_client.subscriptions.list():
-        print(sub.subscription_id, sub.display_name)
+    resource_client = ResourceManagementClient(credential, subscription_id)
 
-        # Inicjalizacja klienta zasobów
-        resource_client = ResourceManagementClient(credential, sub.subscription_id)
-
-        # Tworzenie nowej grupy zasobów
-        rg_name = "my-new-resource-group"
-        location = "westeurope"  # lub np. "eastus", "northeurope"
-
+    try:
         rg_result = resource_client.resource_groups.create_or_update(
             rg_name,
-            {
-                "location": location
-            }
+            {"location": location}
         )
-    return redirect(FRONTEND_URL + "/api/resource_groups") 
+        return jsonify({
+            "message": f"Utworzono RG: {rg_result.name} w {rg_result.location}"
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
+@app.route("/api/vnets")
+def api_vnet():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    credential = FlaskCredential()
+    sub_client = SubscriptionClient(credential)
+    
+    items = []
+    try:
+        for sub in sub_client.subscriptions.list():
+            subscription_id = sub.subscription_id
+            rg_client = ResourceManagementClient(credential, subscription_id)
+            nt_client = NetworkManagementClient(credential, subscription_id)
+            for rg in rg_client.resource_groups.list():
+                  rg_name = rg.name
+                  for vnet in nt_client.virtual_networks.list(rg_name):
+                    vnet_name = vnet.name
+                    vnet_info = {
+                        "subscriptionId": subscription_id,
+                        "resourceGroup": rg_name,
+                        "network": vnet_name,
+                        "subnets": []
+                    }
+                    for subnet in nt_client.subnets.list(rg_name, vnet_name):
+                        vnet_info["subnets"].append(subnet.name)
+                    items.append(vnet_info)
+        return jsonify({"value": items})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/vnetsCreate", methods=["POST"])
+def api_vnet_create():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+    
+    data = request.get_json()
+    subscription_id = data.get("subscriptionId")
+    vnet = data.get("vnetName")
+    rg = data.get("rgName")
+    location = data.get("location")
+
+   
+
+    if not all([subscription_id, rg, location]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    credential = FlaskCredential()
+    network_client = NetworkManagementClient(credential, subscription_id)
+
+    try:
+        # Provision the virtual network and wait for completion
+        nt_result = network_client.virtual_networks.begin_create_or_update(
+        rg,
+        vnet,
+        {
+            "location": location,
+            "address_space": {"address_prefixes": ["10.0.0.0/16"]},
+        },
+        )
+        return jsonify({
+            "message": f"Utworzono vnet: {vnet} w {location}"
+        }), 200
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/subnetCreate", methods=["POST"])
+def api_subnet_create():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    subscription_id = data.get("subscriptionId")
+    rg = data.get("rgName")
+    vnet = data.get("vnetName")
+    subnet_name = data.get("subnetName")
+    address_prefix = data.get("addressPrefix", "10.0.1.0/24")  # domyślny zakres
+
+    if not all([subscription_id, rg, vnet, subnet_name]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    try:
+        credential = FlaskCredential()
+        network_client = NetworkManagementClient(credential, subscription_id)
+
+        poller = network_client.subnets.begin_create_or_update(
+            rg,
+            vnet,
+            subnet_name,
+            {"address_prefix": address_prefix}
+        )
+        result = poller.result()
+
+        return jsonify({
+            "message": f"✅ Utworzono subnet: {subnet_name} w VNet: {vnet}",
+            "subnet": result.name
+        }), 200
+
+    except Exception as e:
+         return jsonify({"error": str(e)}), 500
+            
+
+@app.route("/api/virtual_machines")
+def api_virtual_machines():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    credential = FlaskCredential()
+    sub_client = SubscriptionClient(credential)
+
+    items = []
+    try:
+        for sub in sub_client.subscriptions.list():
+            compute_client = ComputeManagementClient(credential, sub.subscription_id)
+            for vm in compute_client.virtual_machines.list_all():
+                items.append({
+                    "subscriptionId": sub.subscription_id,
+                    "name": vm.name,
+                    "location": vm.location,
+                    "resourceGroup": vm.id.split("/")[4]
+                })
+        return jsonify({"value": items})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+'''
+@app.route("/api/create_vm", methods=["POST"])
+def api_create_vm():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    subscription_id = data.get("subscriptionId")
+    rg_name = data.get("rgName")
+    location = data.get("location")
+
+    if not all([subscription_id, rg_name, location]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    credential = FlaskCredential()
+    resource_client = ResourceManagementClient(credential, subscription_id)
+
+    try:
+        rg_result = resource_client.resource_groups.create_or_update(
+            rg_name,
+            {"location": location}
+        )
+        return jsonify({
+            "message": f"Utworzono RG: {rg_result.name} w {rg_result.location}"
+        }), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+'''
 
 
 if __name__ == "__main__":

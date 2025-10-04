@@ -5,5 +5,7 @@ python-dotenv
 azure-identity
 azure-mgmt-subscription
 azure-mgmt-resource
+azure-mgmt-compute
+azure-mgmt-network
 azure-core
 flask_cors
