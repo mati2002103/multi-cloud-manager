@@ -4,3 +4,6 @@ requests
 python-dotenv
 azure-identity
 azure-mgmt-subscription
+azure-mgmt-resource
+azure-core
+flask_cors
