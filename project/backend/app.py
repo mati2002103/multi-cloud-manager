@@ -161,6 +161,58 @@ def api_create_resource_group():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route("/api/resource_group_contents", methods=["GET"])
+def api_rg_contents():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    subscription_id = request.args.get("subscriptionId")
+    rg_name = request.args.get("rgName")
+
+    if not subscription_id or not rg_name:
+        return jsonify({"error": "Brak wymaganych parametrów"}), 400
+
+    try:
+        credential = FlaskCredential()
+        resource_client = ResourceManagementClient(credential, subscription_id)
+
+        resources = resource_client.resources.list_by_resource_group(rg_name)
+        items = []
+        for res in resources:
+            items.append({
+                "name": res.name,
+                "type": res.type,
+                "location": res.location,
+                "id": res.id
+            })
+
+        return jsonify({"value": items})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/resource_group_delete", methods=["DELETE"])
+def api_rg_delete():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    subscription_id = data.get("subscriptionId")
+    rg_name = data.get("rgName")
+
+    if not subscription_id or not rg_name:
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    try:
+        credential = FlaskCredential()
+        resource_client = ResourceManagementClient(credential, subscription_id)
+
+        poller = resource_client.resource_groups.begin_delete(rg_name)
+        poller.result()
+
+        return jsonify({"message": f"✅ Usunięto grupę zasobów: {rg_name}"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route("/api/vnets")
 def api_vnet():
     if "access_token" not in session:
