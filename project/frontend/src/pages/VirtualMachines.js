@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from "react";
 import CreateResourceGroupModal from "../components/CreateResourceGroupModal";
+import CreateVMModal from "../components/CreateVMModal";
+
 
 const VirtualMachines = () => {
   const [resourceGroups, setResourceGroups] = useState([]);
@@ -13,6 +15,8 @@ const VirtualMachines = () => {
   const [selectedRG, setSelectedRG] = useState(null);
   const [rgResources, setRgResources] = useState([]);
   const [showRGDetails, setShowRGDetails] = useState(false);
+  const [showVMModal, setShowVMModal] = useState(false);
+
 
   const fetchResourceGroups = async () => {
     try {
@@ -197,6 +201,26 @@ const deleteRG = async (subscriptionId, rgName) => {
   </div>
 )}
 
+<button
+  onClick={() => setShowVMModal(true)}
+  style={{
+    padding: "10px",
+    background: "#6B46C1",
+    color: "white",
+    border: "none",
+    borderRadius: "8px",
+  }}
+>
+  🖥️ Utwórz VM
+</button>
+<CreateVMModal
+  isOpen={showVMModal}
+  onClose={() => setShowVMModal(false)}
+  onCreated={fetchVirtualMachines}
+  subscriptionId={resourceGroups[0]?.subscriptionId}
+/>
+
+
 
       {/* Tabela VM */}
       <h2 style={{ marginTop: "40px" }}>Maszyny wirtualne (Virtual Machines)</h2>
@@ -206,7 +230,8 @@ const deleteRG = async (subscriptionId, rgName) => {
         <p style={{ color: "red" }}>❌ Błąd: {errorVM}</p>
       ) : virtualMachines.length === 0 ? (
         <p>Brak dostępnych maszyn wirtualnych.</p>
-      ) : (
+      ) : 
+      (
         <table style={tableStyle}>
           <thead>
             <tr style={headerStyle}>
