@@ -132,5 +132,47 @@ def create_vm():
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
+def delete_vm():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
 
+    data = request.get_json()
+    subscription_id = data.get("subscriptionId")
+    rg_name = data.get("rgName")
+    vm_name = data.get("vmName")
+
+    if not all([subscription_id, rg_name, vm_name]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    try:
+        credential = FlaskCredential()
+        compute_client = ComputeManagementClient(credential, subscription_id)
+        network_client = NetworkManagementClient(credential, subscription_id)
+
+        vm = compute_client.virtual_machines.get(rg_name, vm_name)
+        os_disk_name = vm.storage_profile.os_disk.name
+        nic_id = vm.network_profile.network_interfaces[0].id
+        nic_name = nic_id.split("/")[-1]
+
+        compute_client.virtual_machines.begin_delete(rg_name, vm_name).result()
+
+        compute_client.disks.begin_delete(rg_name, os_disk_name).result()
+
+        network_client.network_interfaces.begin_delete(rg_name, nic_name).result()
+
+        nic = network_client.network_interfaces.get(rg_name, nic_name)
+        ip_id = nic.ip_configurations[0].public_ip_address.id
+        ip_name = ip_id.split("/")[-1]
+
+        network_client.public_ip_addresses.begin_delete(rg_name, ip_name).result()
+
+        return jsonify({
+            "message": f"VM '{vm_name}' oraz powiązane zasoby zostały usunięte pomyślnie"
+        }), 200
+
+    except ResourceNotFoundError:
+        return jsonify({"error": f"VM '{vm_name}' nie istnieje"}), 404
+    except Exception as e:
+        return jsonify({"error": str(e)}) 

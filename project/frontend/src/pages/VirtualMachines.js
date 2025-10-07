@@ -34,36 +34,36 @@ const VirtualMachines = () => {
     }
   };
   const fetchRGContents = async (subscriptionId, rgName) => {
-  try {
-    const res = await fetch(`/api/resource_group_contents?subscriptionId=${subscriptionId}&rgName=${rgName}`, {
-      credentials: "include",
-    });
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    setRgResources(data.value || []);
-    setSelectedRG(rgName);
-    setShowRGDetails(true);
-  } catch (err) {
-    alert("❌ Błąd pobierania zasobów: " + err.message);
-  }
-};
-const deleteRG = async (subscriptionId, rgName) => {
-  if (!window.confirm(`Czy na pewno chcesz usunąć grupę zasobów "${rgName}"?`)) return;
-  try {
-    const res = await fetch("/api/resource_group_delete", {
-      method: "DELETE",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ subscriptionId, rgName }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Błąd usuwania RG");
-    alert(data.message);
-    fetchResourceGroups();
-  } catch (err) {
-    alert("❌ " + err.message);
-  }
-};
+    try {
+      const res = await fetch(`/api/resource_group_contents?subscriptionId=${subscriptionId}&rgName=${rgName}`, {
+        credentials: "include",
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setRgResources(data.value || []);
+      setSelectedRG(rgName);
+      setShowRGDetails(true);
+    } catch (err) {
+      alert("❌ Błąd pobierania zasobów: " + err.message);
+    }
+  };
+  const deleteRG = async (subscriptionId, rgName) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć grupę zasobów "${rgName}"?`)) return;
+    try {
+      const res = await fetch("/api/resource_group_delete", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId, rgName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania RG");
+      alert(data.message);
+      fetchResourceGroups();
+    } catch (err) {
+      alert("❌ " + err.message);
+    }
+  };
 
 
   const fetchVirtualMachines = async () => {
@@ -87,43 +87,61 @@ const deleteRG = async (subscriptionId, rgName) => {
     fetchVirtualMachines();
   }, []);
 
+  const deleteVM = async (subscriptionId, rgName, vmName) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć maszynę wirtualną "${vmName}"?`)) return;
+    try {
+      const res = await fetch("/api/vmsDelete", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId, rgName, vmName }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania VM");
+      alert(data.message);
+      fetchVirtualMachines();
+    } catch (err) {
+      alert("❌ " + err.message);
+    }
+  };
+
   return (
     <div style={{ padding: "20px", maxWidth: "900px", margin: "0 auto" }}>
       <h1>Grupy zasobów (Resource Groups)</h1>
       <p>Lista wszystkich grup zasobów dostępnych w Twoim koncie Azure.</p>
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-  <button
-    onClick={() => setShowModal(true)}
-    style={{
-      padding: "10px",
-      background: "#0078D4",
-      color: "white",
-      border: "none",
-      borderRadius: "8px",
-    }}
-  >
-    ➕ Dodaj RG
-  </button>
+        <button
+          onClick={() => setShowModal(true)}
+          style={{
+            padding: "10px",
+            background: "#0078D4",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+          }}
+        >
+          ➕ Dodaj RG
+        </button>
 
-  <button
-    onClick={() => {
-      setLoadingRG(true);
-      setLoadingVM(true);
-      fetchResourceGroups();
-      fetchVirtualMachines();
-    }}
-    style={{
-      padding: "10px",
-      background: "#38A169",
-      color: "white",
-      border: "none",
-      borderRadius: "8px",
-    }}
-  >
-    🔄 Odśwież
-  </button>
-</div>
+        <button
+          onClick={() => {
+            setLoadingRG(true);
+            setLoadingVM(true);
+            fetchResourceGroups();
+            fetchVirtualMachines();
+          }}
+          style={{
+            padding: "10px",
+            background: "#38A169",
+            color: "white",
+            border: "none",
+            borderRadius: "8px",
+          }}
+        >
+          🔄 Odśwież
+        </button>
+      </div>
 
       <CreateResourceGroupModal
         isOpen={showModal}
@@ -159,11 +177,11 @@ const deleteRG = async (subscriptionId, rgName) => {
                 <td style={cellStyle}>{rg.resourceGroup}</td>
                 <td style={cellStyle}>{rg.location}</td>
                 <td style={cellStyle}>
-  <button onClick={() => fetchRGContents(rg.subscriptionId, rg.resourceGroup)}>🔎</button>
-</td>
-<td style={cellStyle}>
-  <button onClick={() => deleteRG(rg.subscriptionId, rg.resourceGroup)}>❌</button>
-</td>
+                  <button onClick={() => fetchRGContents(rg.subscriptionId, rg.resourceGroup)}>🔎</button>
+                </td>
+                <td style={cellStyle}>
+                  <button onClick={() => deleteRG(rg.subscriptionId, rg.resourceGroup)}>❌</button>
+                </td>
 
               </tr>
             ))}
@@ -171,54 +189,54 @@ const deleteRG = async (subscriptionId, rgName) => {
         </table>
       )}
       {showRGDetails && (
-  <div style={{ marginTop: "30px" }}>
-    <h3>📦 Zasoby w grupie: {selectedRG}</h3>
-    {rgResources.length === 0 ? (
-      <p>Brak zasobów w tej grupie.</p>
-    ) : (
-      <table style={tableStyle}>
-        <thead>
-          <tr style={headerStyle}>
-            <th>Nazwa</th>
-            <th>Typ</th>
-            <th>Lokalizacja</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rgResources.map((res, idx) => (
-            <tr key={idx}>
-              <td style={cellStyle}>{res.name}</td>
-              <td style={cellStyle}>{res.type}</td>
-              <td style={cellStyle}>{res.location}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    )}
-    <button onClick={() => setShowRGDetails(false)} style={{ marginTop: "10px" }}>
-      Zamknij
-    </button>
-  </div>
-)}
+        <div style={{ marginTop: "30px" }}>
+          <h3>📦 Zasoby w grupie: {selectedRG}</h3>
+          {rgResources.length === 0 ? (
+            <p>Brak zasobów w tej grupie.</p>
+          ) : (
+            <table style={tableStyle}>
+              <thead>
+                <tr style={headerStyle}>
+                  <th>Nazwa</th>
+                  <th>Typ</th>
+                  <th>Lokalizacja</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rgResources.map((res, idx) => (
+                  <tr key={idx}>
+                    <td style={cellStyle}>{res.name}</td>
+                    <td style={cellStyle}>{res.type}</td>
+                    <td style={cellStyle}>{res.location}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <button onClick={() => setShowRGDetails(false)} style={{ marginTop: "10px" }}>
+            Zamknij
+          </button>
+        </div>
+      )}
 
-<button
-  onClick={() => setShowVMModal(true)}
-  style={{
-    padding: "10px",
-    background: "#6B46C1",
-    color: "white",
-    border: "none",
-    borderRadius: "8px",
-  }}
->
-  🖥️ Utwórz VM
-</button>
-<CreateVMModal
-  isOpen={showVMModal}
-  onClose={() => setShowVMModal(false)}
-  onCreated={fetchVirtualMachines}
-  subscriptionId={resourceGroups[0]?.subscriptionId}
-/>
+      <button
+        onClick={() => setShowVMModal(true)}
+        style={{
+          padding: "10px",
+          background: "#6B46C1",
+          color: "white",
+          border: "none",
+          borderRadius: "8px",
+        }}
+      >
+        🖥️ Utwórz VM
+      </button>
+      <CreateVMModal
+        isOpen={showVMModal}
+        onClose={() => setShowVMModal(false)}
+        onCreated={fetchVirtualMachines}
+        subscriptionId={resourceGroups[0]?.subscriptionId}
+      />
 
 
 
@@ -230,35 +248,37 @@ const deleteRG = async (subscriptionId, rgName) => {
         <p style={{ color: "red" }}>❌ Błąd: {errorVM}</p>
       ) : virtualMachines.length === 0 ? (
         <p>Brak dostępnych maszyn wirtualnych.</p>
-      ) : 
-      (
-        <table style={tableStyle}>
-          <thead>
-            <tr style={headerStyle}>
-              <th>Subscription ID</th>
-              <th>Resource Group</th>
-              <th>VM Name</th>
-              <th>Location</th>
-              <th>Monitor</th>
-              <th>Modify</th>
-              <th>Delete</th>
-            </tr>
-          </thead>
-          <tbody>
-            {virtualMachines.map((vm, idx) => (
-              <tr key={idx}>
-                <td style={cellStyle}>{vm.subscriptionId}</td>
-                <td style={cellStyle}>{vm.resourceGroup}</td>
-                <td style={cellStyle}>{vm.name}</td>
-                <td style={cellStyle}>{vm.location}</td>
-                <td style={cellStyle}>📈</td>
-                <td style={cellStyle}>🛠</td>
-                <td style={cellStyle}>❌</td>
+      ) :
+        (
+          <table style={tableStyle}>
+            <thead>
+              <tr style={headerStyle}>
+                <th>Subscription ID</th>
+                <th>Resource Group</th>
+                <th>VM Name</th>
+                <th>Location</th>
+                <th>Monitor</th>
+                <th>Modify</th>
+                <th>Delete</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {virtualMachines.map((vm, idx) => (
+                <tr key={idx}>
+                  <td style={cellStyle}>{vm.subscriptionId}</td>
+                  <td style={cellStyle}>{vm.resourceGroup}</td>
+                  <td style={cellStyle}>{vm.name}</td>
+                  <td style={cellStyle}>{vm.location}</td>
+                  <td style={cellStyle}>📈</td>
+                  <td style={cellStyle}>🛠</td>
+                  <td style={cellStyle}>
+                    <button onClick={() => deleteVM(vm.subscriptionId, vm.resourceGroup, vm.name)}>❌</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
     </div>
   );
 };
