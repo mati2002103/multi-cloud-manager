@@ -6,6 +6,26 @@ from azure.mgmt.compute import ComputeManagementClient
 from azure.mgmt.network import NetworkManagementClient
 from azure.core.exceptions import ResourceNotFoundError
 from azure.mgmt.subscription import SubscriptionClient
+from azure.monitor.query import MetricsQueryClient, MetricAggregationType
+
+
+
+
+
+
+def find_vm_by_name(vm_id, credential):
+    sub_client = SubscriptionClient(credential)
+    for sub in sub_client.subscriptions.list():
+        compute_client = ComputeManagementClient(credential, sub.subscription_id)
+        for vm in compute_client.virtual_machines.list_all():
+            if vm.name == vm_id:
+                return {
+                    "subscriptionId": sub.subscription_id,
+                    "resourceGroup": vm.id.split("/")[4],
+                    "resourceId": vm.id
+                }
+    return None
+
 
 def list_virtual_machines():
     if "access_token" not in session:
@@ -176,3 +196,95 @@ def delete_vm():
         return jsonify({"error": f"VM '{vm_name}' nie istnieje"}), 404
     except Exception as e:
         return jsonify({"error": str(e)}) 
+    
+def vm_az_monitor_metrics(vm_id):
+    from flask import jsonify, session
+    import traceback
+    from azure.identity import DefaultAzureCredential
+    from datetime import datetime, timedelta
+    #if "access_token" not in session:
+        #return jsonify({"error": "Unauthorized"}), 401
+
+    try:
+        credential = DefaultAzureCredential()
+    except Exception as e:
+        print("❌ Błąd tworzenia poświadczeń:", traceback.format_exc())
+        return jsonify({"error": f"Błąd poświadczeń: {str(e)}"}), 500
+
+    try:
+        vm_info = find_vm_by_name(vm_id, credential)
+        if not vm_info:
+            return jsonify({"error": f"VM '{vm_id}' not found"}), 404
+    except Exception as e:
+        print("❌ Błąd wyszukiwania VM:", traceback.format_exc())
+        return jsonify({"error": f"Błąd wyszukiwania VM: {str(e)}"}), 500
+
+    try:
+        resource_id = vm_info.get("resourceId")
+        if not resource_id:
+            subscription_id = vm_info.get("subscriptionId")
+            rg_name = vm_info.get("resourceGroup")
+            if not all([subscription_id, rg_name]):
+                return jsonify({"error": "Brakuje subscriptionId lub resourceGroup"}), 400
+            resource_id = f"/subscriptions/{subscription_id}/resourceGroups/{rg_name}/providers/Microsoft.Compute/virtualMachines/{vm_id}"
+    except Exception as e:
+        print("❌ Błąd budowania resourceId:", traceback.format_exc())
+        return jsonify({"error": f"Błąd budowania resourceId: {str(e)}"}), 500
+
+    print("Resource ID:", resource_id)
+    print("Zapytanie metryk dla:", vm_id)
+
+    
+    try:
+        client = MetricsQueryClient(credential)
+        end_time = datetime.utcnow()
+        start_time = end_time - timedelta(hours=1)
+        metric_names = [
+            "Percentage CPU",
+            "Available Memory Percentage",
+            "Available Memory Bytes",
+            "CPU Credits Consumed",
+        ]
+        response = client.query_resource(
+            resource_uri=resource_id,
+            metric_names=metric_names,
+            timespan=(start_time, end_time),
+            interval="PT5M",
+            aggregations=[MetricAggregationType.AVERAGE]
+        )
+    except Exception as e:
+        print("❌ Błąd zapytania metryk:", traceback.format_exc())
+        return jsonify({"error": f"Błąd zapytania metryk: {str(e)}"}), 500
+
+    try:
+        metrics_data = []
+        for metric in response.metrics:
+            datapoints = []
+            for series in metric.timeseries:
+                for val in series.data:
+                    if val.average is not None:
+                        datapoints.append({
+                            "timestamp": val.timestamp.isoformat(),
+                            "average": round(val.average, 2)
+                        })
+            metrics_data.append({
+                "name": getattr(metric, "name", None) or getattr(metric, "name_", "unknown"),
+                "unit": getattr(metric, "unit", "unknown"),
+                "data": datapoints
+            })
+    except Exception as e:
+        print("❌ Błąd parsowania metryk:", traceback.format_exc())
+        return jsonify({"error": f"Błąd parsowania metryk: {str(e)}"}), 500
+
+    try:
+        return jsonify({
+            "vm": vm_id,
+            "subscriptionId": vm_info.get("subscriptionId", "N/A"),
+            "resourceGroup": vm_info.get("resourceGroup", "N/A"),
+            "resourceId": resource_id,
+            "metrics": metrics_data
+        }), 200
+    except Exception as e:
+        print("❌ Błąd serializacji odpowiedzi:", traceback.format_exc())
+        return jsonify({"error": f"Błąd serializacji odpowiedzi: {str(e)}"}), 500
+    

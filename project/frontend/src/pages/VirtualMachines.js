@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import CreateResourceGroupModal from "../components/CreateResourceGroupModal";
 import CreateVMModal from "../components/CreateVMModal";
-
+import { useNavigate } from "react-router-dom";
 
 const VirtualMachines = () => {
   const [resourceGroups, setResourceGroups] = useState([]);
@@ -17,6 +17,7 @@ const VirtualMachines = () => {
   const [showRGDetails, setShowRGDetails] = useState(false);
   const [showVMModal, setShowVMModal] = useState(false);
 
+  const navigate = useNavigate();
 
   const fetchResourceGroups = async () => {
     try {
@@ -35,9 +36,12 @@ const VirtualMachines = () => {
   };
   const fetchRGContents = async (subscriptionId, rgName) => {
     try {
-      const res = await fetch(`/api/resource_group_contents?subscriptionId=${subscriptionId}&rgName=${rgName}`, {
-        credentials: "include",
-      });
+      const res = await fetch(
+        `/api/resource_group_contents?subscriptionId=${subscriptionId}&rgName=${rgName}`,
+        {
+          credentials: "include",
+        }
+      );
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setRgResources(data.value || []);
@@ -48,7 +52,10 @@ const VirtualMachines = () => {
     }
   };
   const deleteRG = async (subscriptionId, rgName) => {
-    if (!window.confirm(`Czy na pewno chcesz usunąć grupę zasobów "${rgName}"?`)) return;
+    if (
+      !window.confirm(`Czy na pewno chcesz usunąć grupę zasobów "${rgName}"?`)
+    )
+      return;
     try {
       const res = await fetch("/api/resource_group_delete", {
         method: "DELETE",
@@ -64,7 +71,6 @@ const VirtualMachines = () => {
       alert("❌ " + err.message);
     }
   };
-
 
   const fetchVirtualMachines = async () => {
     try {
@@ -88,7 +94,12 @@ const VirtualMachines = () => {
   }, []);
 
   const deleteVM = async (subscriptionId, rgName, vmName) => {
-    if (!window.confirm(`Czy na pewno chcesz usunąć maszynę wirtualną "${vmName}"?`)) return;
+    if (
+      !window.confirm(
+        `Czy na pewno chcesz usunąć maszynę wirtualną "${vmName}"?`
+      )
+    )
+      return;
     try {
       const res = await fetch("/api/vmsDelete", {
         method: "DELETE",
@@ -177,12 +188,23 @@ const VirtualMachines = () => {
                 <td style={cellStyle}>{rg.resourceGroup}</td>
                 <td style={cellStyle}>{rg.location}</td>
                 <td style={cellStyle}>
-                  <button onClick={() => fetchRGContents(rg.subscriptionId, rg.resourceGroup)}>🔎</button>
+                  <button
+                    onClick={() =>
+                      fetchRGContents(rg.subscriptionId, rg.resourceGroup)
+                    }
+                  >
+                    🔎
+                  </button>
                 </td>
                 <td style={cellStyle}>
-                  <button onClick={() => deleteRG(rg.subscriptionId, rg.resourceGroup)}>❌</button>
+                  <button
+                    onClick={() =>
+                      deleteRG(rg.subscriptionId, rg.resourceGroup)
+                    }
+                  >
+                    ❌
+                  </button>
                 </td>
-
               </tr>
             ))}
           </tbody>
@@ -213,7 +235,10 @@ const VirtualMachines = () => {
               </tbody>
             </table>
           )}
-          <button onClick={() => setShowRGDetails(false)} style={{ marginTop: "10px" }}>
+          <button
+            onClick={() => setShowRGDetails(false)}
+            style={{ marginTop: "10px" }}
+          >
             Zamknij
           </button>
         </div>
@@ -238,47 +263,59 @@ const VirtualMachines = () => {
         subscriptionId={resourceGroups[0]?.subscriptionId}
       />
 
-
-
       {/* Tabela VM */}
-      <h2 style={{ marginTop: "40px" }}>Maszyny wirtualne (Virtual Machines)</h2>
+      <h2 style={{ marginTop: "40px" }}>
+        Maszyny wirtualne (Virtual Machines)
+      </h2>
       {loadingVM ? (
         <p>⏳ Ładowanie VM...</p>
       ) : errorVM ? (
         <p style={{ color: "red" }}>❌ Błąd: {errorVM}</p>
       ) : virtualMachines.length === 0 ? (
         <p>Brak dostępnych maszyn wirtualnych.</p>
-      ) :
-        (
-          <table style={tableStyle}>
-            <thead>
-              <tr style={headerStyle}>
-                <th>Subscription ID</th>
-                <th>Resource Group</th>
-                <th>VM Name</th>
-                <th>Location</th>
-                <th>Monitor</th>
-                <th>Modify</th>
-                <th>Delete</th>
+      ) : (
+        <table style={tableStyle}>
+          <thead>
+            <tr style={headerStyle}>
+              <th>Subscription ID</th>
+              <th>Resource Group</th>
+              <th>VM Name</th>
+              <th>Location</th>
+              <th>Monitor</th>
+              <th>Modify</th>
+              <th>Delete</th>
+            </tr>
+          </thead>
+          <tbody>
+            {virtualMachines.map((vm, idx) => (
+              <tr key={idx}>
+                <td style={cellStyle}>{vm.subscriptionId}</td>
+                <td style={cellStyle}>{vm.resourceGroup}</td>
+                <td style={cellStyle}>{vm.name}</td>
+                <td style={cellStyle}>{vm.location}</td>
+                <td style={cellStyle}>
+                  <span
+                    style={{ cursor: "pointer" }}
+                    onClick={() => navigate(`/vm/${vm.name}/monitoring`)}
+                  >
+                    📈
+                  </span>
+                </td>
+                <td style={cellStyle}>🛠</td>
+                <td style={cellStyle}>
+                  <button
+                    onClick={() =>
+                      deleteVM(vm.subscriptionId, vm.resourceGroup, vm.name)
+                    }
+                  >
+                    ❌
+                  </button>
+                </td>
               </tr>
-            </thead>
-            <tbody>
-              {virtualMachines.map((vm, idx) => (
-                <tr key={idx}>
-                  <td style={cellStyle}>{vm.subscriptionId}</td>
-                  <td style={cellStyle}>{vm.resourceGroup}</td>
-                  <td style={cellStyle}>{vm.name}</td>
-                  <td style={cellStyle}>{vm.location}</td>
-                  <td style={cellStyle}>📈</td>
-                  <td style={cellStyle}>🛠</td>
-                  <td style={cellStyle}>
-                    <button onClick={() => deleteVM(vm.subscriptionId, vm.resourceGroup, vm.name)}>❌</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
+            ))}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 };

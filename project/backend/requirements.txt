@@ -7,5 +7,6 @@ azure-mgmt-subscription
 azure-mgmt-resource
 azure-mgmt-compute
 azure-mgmt-network
+azure-monitor-query==1.2.0
 azure-core
 flask_cors

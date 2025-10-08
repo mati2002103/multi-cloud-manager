@@ -7,6 +7,7 @@ import Containers from "./pages/Containers";
 import Subscriptions from "./pages/Subscriptions";
 import Accounts from "./pages/Accounts";
 import Networks from "./pages/Networks";
+import VMMonitor from "./pages/VmMonitor";
 
 import Home from "./pages/Home"; // 🔥 Landing Page
 
@@ -47,6 +48,7 @@ function App() {
                     <Route path="/networks" element={<Networks />} />
                     <Route path="/subscriptions" element={<Subscriptions />} />
                     <Route path="/accounts" element={<Accounts />} />
+                    <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>
                 </div>

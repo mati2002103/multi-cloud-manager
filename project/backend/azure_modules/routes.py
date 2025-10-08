@@ -3,7 +3,7 @@ from flask import Blueprint
 from .rg import list_resource_groups, create_resource_group,rg_contents, rg_delete
 from .vnet import list_vnets, vnet_create
 from .subnet import subnet_create
-from .vm import list_virtual_machines, create_vm,delete_vm
+from .vm import list_virtual_machines, create_vm,delete_vm,vm_az_monitor_metrics
 from .utils import api_user, api_subscriptions, logout, api_accounts
 
 azure_bp_module = Blueprint("azure_module", __name__)
@@ -26,6 +26,11 @@ azure_bp_module.route("/api/subnetCreate", methods=["POST"])(subnet_create)
 azure_bp_module.route("/api/virtual_machines")(list_virtual_machines)
 azure_bp_module.route("/api/vmsCreate", methods=["POST"])(create_vm)
 azure_bp_module.route("/api/vmsDelete", methods=["DELETE"])(delete_vm)
+
+#VM monitoring
+azure_bp_module.route("/api/vm/<vm_id>/metrics", methods=["POST"])(vm_az_monitor_metrics)
+
+
 
 
 # Session
