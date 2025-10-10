@@ -3,7 +3,11 @@ from flask import Blueprint
 from .rg import list_resource_groups, create_resource_group,rg_contents, rg_delete
 from .vnet import list_vnets, vnet_create
 from .subnet import subnet_create
-from .vm import list_virtual_machines, create_vm,delete_vm,vm_az_monitor_metrics,ensure_ama,agent_status,create_log_analytics,list_log_analytics,list_dcr,create_dcr,logs_basic
+from .vmmonitor import vm_az_monitor_metrics,agent_status,ensure_ama
+from .vm import list_virtual_machines, create_vm,delete_vm
+from .containers import list_containers
+from .log_analytics import create_log_analytics,list_log_analytics,list_dcr,create_dcr,logs_basic
+
 from .utils import api_user, api_subscriptions, logout, api_accounts
 
 azure_bp_module = Blueprint("azure_module", __name__)
@@ -42,6 +46,9 @@ azure_bp_module.route("/api/log_analytics", methods=["GET"])(list_log_analytics)
 azure_bp_module.route("/api/dcr_list", methods=["GET"])(list_dcr)
 azure_bp_module.route("/api/dcr_create", methods=["POST"])(create_dcr)
 azure_bp_module.route("/api/logs_basic", methods=["GET"])(logs_basic)
+
+#containers
+azure_bp_module.route("/api/list_containers", methods=["GET"])(list_containers)
 
 
 # Session

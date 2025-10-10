@@ -1,15 +1,13 @@
 import React, { useEffect, useState } from "react";
-import CreateResourceGroupModal from "../components/CreateResourceGroupModal";
 
-const VirtualMachines = () => {
-  const [resourceGroups, setResourceGroups] = useState([]);
+const Containers = () => {
+  const [containers, setContainers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [showModal, setShowModal] = useState(false);
 
-  const fetchResourceGroups = async () => {
+  const fetchContainers = async () => {
     try {
-      const res = await fetch("/api/resource_groups", {
+      const res = await fetch("/api/list_containers", {
         credentials: "include",
       });
 
@@ -23,9 +21,9 @@ const VirtualMachines = () => {
         throw new Error(data.error);
       }
 
-      setResourceGroups(data.value || []);
+      setContainers(data.value || []);
     } catch (err) {
-      console.error("Błąd pobierania resource groups:", err);
+      console.error("Błąd pobierania kontenerów:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -33,41 +31,20 @@ const VirtualMachines = () => {
   };
 
   useEffect(() => {
-    fetchResourceGroups();
+    fetchContainers();
   }, []);
 
   return (
     <div style={{ padding: "20px", maxWidth: "900px", margin: "0 auto" }}>
-      <h1>Grupy zasobów (Resource Groups)</h1>
-      <p>Lista wszystkich grup zasobów dostępnych w Twoim koncie Azure.</p>
-
-      <button
-        onClick={() => setShowModal(true)}
-        style={{
-          padding: "10px",
-          flex: 1,
-          background: "#0078D4",
-          color: "white",
-          border: "none",
-          borderRadius: "8px",
-          marginBottom: "20px",
-        }}
-      >
-        ➕ Dodaj RG
-      </button>
-
-      <CreateResourceGroupModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onCreated={fetchResourceGroups}
-      />
+      <h1>Kontenery (Azure Container Instances)</h1>
+      <p>Lista wszystkich wdrożonych kontenerów w Twoim koncie Azure.</p>
 
       {loading ? (
         <p>⏳ Ładowanie danych...</p>
       ) : error ? (
         <p style={{ color: "red" }}>❌ Błąd: {error}</p>
-      ) : resourceGroups.length === 0 ? (
-        <p>Brak dostępnych grup zasobów.</p>
+      ) : containers.length === 0 ? (
+        <p>Brak dostępnych kontenerów.</p>
       ) : (
         <table
           style={{
@@ -79,52 +56,40 @@ const VirtualMachines = () => {
         >
           <thead>
             <tr style={{ backgroundColor: "#f5f5f5" }}>
-              <th
-                style={{
-                  textAlign: "left",
-                  padding: "10px",
-                  borderBottom: "1px solid #ddd",
-                }}
-              >
-                Subscription ID
+              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
+                Nazwa kontenera
               </th>
-              <th
-                style={{
-                  textAlign: "left",
-                  padding: "10px",
-                  borderBottom: "1px solid #ddd",
-                }}
-              >
+              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
                 Resource Group
               </th>
-              <th
-                style={{
-                  textAlign: "left",
-                  padding: "10px",
-                  borderBottom: "1px solid #ddd",
-                }}
-              >
-                Location
+              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
+                Lokalizacja
+              </th>
+              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
+                Status
+              </th>
+              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
+                Obraz
               </th>
             </tr>
           </thead>
           <tbody>
-            {resourceGroups.map((rg, idx) => (
+            {containers.map((container, idx) => (
               <tr key={idx}>
-                <td
-                  style={{
-                    padding: "8px",
-                    borderBottom: "1px solid #ddd",
-                    fontFamily: "monospace",
-                  }}
-                >
-                  {rg.subscriptionId}
+                <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
+                  {container.name}
                 </td>
                 <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
-                  {rg.resourceGroup}
+                  {container.resourceGroup}
                 </td>
                 <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
-                  {rg.location}
+                  {container.location}
+                </td>
+                <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
+                  {container.status}
+                </td>
+                <td style={{ padding: "8px", borderBottom: "1px solid #ddd", fontFamily: "monospace" }}>
+                  {container.image}
                 </td>
               </tr>
             ))}
@@ -135,4 +100,4 @@ const VirtualMachines = () => {
   );
 };
 
-export default VirtualMachines;
+export default Containers;

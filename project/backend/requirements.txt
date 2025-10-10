@@ -12,5 +12,6 @@ azure-mgmt-loganalytics
 azure-loganalytics
 azure-mgmt-monitor==3.0.0
 azure-mgmt-loganalytics 
+azure.mgmt.containerinstance
 azure-core
 flask_cors
