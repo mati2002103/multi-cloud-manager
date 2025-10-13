@@ -4,6 +4,7 @@ from .utils import FlaskCredential
 from azure.mgmt.subscription import SubscriptionClient
 from azure.mgmt.storage import StorageManagementClient
 from azure.mgmt.resource import ResourceManagementClient
+from azure.storage.blob import BlobServiceClient
 
 from enum import Enum
 
@@ -125,5 +126,75 @@ def delete_storage_account():
             "message": f"Storage account '{account_name}' został usunięty"
         }), 200
 
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+def list_blob_containers():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    account_name = data.get("accountName")
+    account_key = data.get("accountKey")
+
+    if not all([account_name, account_key]):
+        return jsonify({"error": "Brak danych konta"}), 400
+
+    try:
+        blob_service = BlobServiceClient(
+            account_url=f"https://{account_name}.blob.core.windows.net",
+            credential=account_key
+        )
+
+        containers = blob_service.list_containers()
+        result = [{"name": c.name, "last_modified": c.last_modified.isoformat()} for c in containers]
+
+        return jsonify({"value": result})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+def create_blob_container():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    account_name = data.get("accountName")
+    account_key = data.get("accountKey")
+    container_name = data.get("containerName")
+
+    if not all([account_name, account_key, container_name]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    try:
+        blob_service = BlobServiceClient(
+            account_url=f"https://{account_name}.blob.core.windows.net",
+            credential=account_key
+        )
+
+        blob_service.create_container(container_name)
+        return jsonify({"message": f"Kontener '{container_name}' utworzony"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+def delete_blob_container():
+    if "access_token" not in session:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json()
+    account_name = data.get("accountName")
+    account_key = data.get("accountKey")
+    container_name = data.get("containerName")
+
+    if not all([account_name, account_key, container_name]):
+        return jsonify({"error": "Brak wymaganych danych"}), 400
+
+    try:
+        blob_service = BlobServiceClient(
+            account_url=f"https://{account_name}.blob.core.windows.net",
+            credential=account_key
+        )
+
+        blob_service.delete_container(container_name)
+        return jsonify({"message": f"Kontener '{container_name}' usunięty"}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500

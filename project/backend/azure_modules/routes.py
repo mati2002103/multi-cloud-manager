@@ -7,7 +7,7 @@ from .vmmonitor import vm_az_monitor_metrics,agent_status,ensure_ama
 from .vm import list_virtual_machines, create_vm,delete_vm
 from .containers import list_containers,create_container,delete_container,restart_container
 from .log_analytics import create_log_analytics,list_log_analytics,list_dcr,create_dcr,logs_basic
-from .storage import list_storage_accounts,create_storage_account,delete_storage_account
+from .storage import list_storage_accounts,create_storage_account,delete_storage_account,list_blob_containers,create_blob_container,delete_blob_container
 
 from .utils import api_user, api_subscriptions, logout, api_accounts
 
@@ -23,10 +23,16 @@ azure_bp_module.route("/api/resource_group_delete", methods=["DELETE"])(rg_delet
 azure_bp_module.route("/api/vnets")(list_vnets)
 azure_bp_module.route("/api/vnetsCreate", methods=["POST"])(vnet_create)
 
-#Storage
+#Storage Accounts
 azure_bp_module.route("/api/list_storage_accounts")(list_storage_accounts)
 azure_bp_module.route("/api/create_storage_account", methods=["POST"])(create_storage_account)
 azure_bp_module.route("/api/delete_storage_account", methods=["DELETE"])(delete_storage_account)
+
+#Blob Storage
+azure_bp_module.route("/api/list_blob_containers")(list_blob_containers)
+azure_bp_module.route("/api/create_blob_container", methods=["POST"])(create_blob_container)
+azure_bp_module.route("/api/delete_blob_container", methods=["DELETE"])(delete_blob_container)
+
 
 
 # Subnet
