@@ -17,3 +17,7 @@ azure.mgmt.containerinstance
 azure-storage-blob
 azure-core
 flask_cors
+
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
