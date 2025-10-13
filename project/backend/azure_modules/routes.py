@@ -29,9 +29,9 @@ azure_bp_module.route("/api/create_storage_account", methods=["POST"])(create_st
 azure_bp_module.route("/api/delete_storage_account", methods=["DELETE"])(delete_storage_account)
 
 #Blob Storage
-azure_bp_module.route("/api/list_blob_containers")(list_blob_containers)
-azure_bp_module.route("/api/create_blob_container", methods=["POST"])(create_blob_container)
-azure_bp_module.route("/api/delete_blob_container", methods=["DELETE"])(delete_blob_container)
+azure_bp_module.route("/api/<storage_account_id>/list_blob_containers", methods=["POST"])(list_blob_containers)
+azure_bp_module.route("/api/<storage_account_id>/create_blob_container", methods=["POST"])(create_blob_container)
+azure_bp_module.route("/api/<storage_account_id>/delete_blob_container", methods=["DELETE"])(delete_blob_container)
 
 
 

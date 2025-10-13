@@ -1,13 +1,13 @@
 import React, { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import CreateStorageAccountModal from "../components/CreateStorageAccountModal";
-
 
 const Storage = () => {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
-  
+  const navigate = useNavigate();
 
   const fetchStorageAccounts = async () => {
     setLoading(true);
@@ -17,15 +17,9 @@ const Storage = () => {
         credentials: "include",
       });
 
-      if (!res.ok) {
-        throw new Error(`Błąd HTTP: ${res.status}`);
-      }
-
+      if (!res.ok) throw new Error(`Błąd HTTP: ${res.status}`);
       const data = await res.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
+      if (data.error) throw new Error(data.error);
 
       setAccounts(data.value || []);
     } catch (err) {
@@ -41,27 +35,27 @@ const Storage = () => {
   }, []);
 
   const handleDelete = async (account) => {
-  if (!window.confirm(`Czy na pewno chcesz usunąć Storage Account "${account.name}"?`)) return;
+    if (!window.confirm(`Czy na pewno chcesz usunąć Storage Account "${account.name}"?`)) return;
 
-  try {
-    const res = await fetch("/api/delete_storage_account", {
-      method: "DELETE",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        subscriptionId: account.subscriptionId,
-        resourceGroup: account.resourceGroup,
-        accountName: account.name
-      }),
-    });
+    try {
+      const res = await fetch("/api/delete_storage_account", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          subscriptionId: account.subscriptionId,
+          resourceGroup: account.resourceGroup,
+          accountName: account.name
+        }),
+      });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Błąd usuwania Storage Account");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania Storage Account");
 
-    fetchStorageAccounts(); // odświeżenie listy
-  } catch (err) {
-    alert(`❌ ${err.message}`);
-  }
+      fetchStorageAccounts();
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
   };
 
   return (
@@ -71,34 +65,18 @@ const Storage = () => {
 
       <button
         onClick={fetchStorageAccounts}
-        style={{
-          padding: "10px",
-          background: "#0078D4",
-          color: "white",
-          border: "none",
-          borderRadius: "8px",
-          cursor: "pointer",
-          marginBottom: "20px"
-        }}
+        style={buttonStyle}
       >
         🔄 Odśwież
       </button>
       <button
-          onClick={() => setShowModal(true)}
-          style={{
-            padding: "10px",
-            background: "#0078D4",
-            color: "white",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-            margin:"5px"
-          }}
-        >
-          ➕ Utwórz kontener
-        </button>
+        onClick={() => setShowModal(true)}
+        style={buttonStyle}
+      >
+        ➕ Utwórz Storage Account
+      </button>
 
-         <CreateStorageAccountModal
+      <CreateStorageAccountModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
         onCreated={fetchStorageAccounts}
@@ -111,14 +89,7 @@ const Storage = () => {
       ) : accounts.length === 0 ? (
         <p>Brak dostępnych Storage Accounts.</p>
       ) : (
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            border: "1px solid #ddd",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-          }}
-        >
+        <table style={tableStyle}>
           <thead>
             <tr style={{ backgroundColor: "#f5f5f5" }}>
               <th style={thStyle}>Nazwa</th>
@@ -129,7 +100,7 @@ const Storage = () => {
               <th style={thStyle}>Typ Storage</th>
               <th style={thStyle}>HTTPS Only</th>
               <th style={thStyle}>Subskrypcja</th>
-              <th style={thStyle}>Delete</th>
+              <th style={thStyle}>Akcje</th>
             </tr>
           </thead>
           <tbody>
@@ -143,8 +114,15 @@ const Storage = () => {
                 <td style={tdStyle}>{acc.storageType?.value || acc.storageType || "—"}</td>
                 <td style={tdStyle}>{acc.httpsOnly ? "✅" : "❌"}</td>
                 <td style={tdStyle}>{acc.subscriptionId}</td>
-                <td><button  onClick={() => handleDelete(acc)}>❌</button></td>
-                
+                <td style={tdStyle}>
+                  <button onClick={() => handleDelete(acc)}>🗑</button>
+                  <button
+                    onClick={() => navigate(`/storage/${acc.name}`, { state: acc })}
+                    style={{ marginLeft: "5px" }}
+                  >
+                    📂 Szczegóły
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -152,6 +130,24 @@ const Storage = () => {
       )}
     </div>
   );
+};
+
+const buttonStyle = {
+  padding: "10px",
+  background: "#0078D4",
+  color: "white",
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
+  marginBottom: "20px",
+  marginRight: "10px"
+};
+
+const tableStyle = {
+  width: "100%",
+  borderCollapse: "collapse",
+  border: "1px solid #ddd",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
 };
 
 const thStyle = {
