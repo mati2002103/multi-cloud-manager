@@ -19,7 +19,7 @@ def login_google():
         "&response_type=code"
         "&scope=openid%20email%20profile"
         "&access_type=offline"
-        "&prompt=consent"
+        "&prompt=consent%20select_account"
     )
     return redirect(url)
 
