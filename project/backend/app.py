@@ -11,11 +11,10 @@ def create_app():
     # Blueprinty rejestrowane:
     from auth.routes import auth_bp
     from azure_modules.routes import azure_bp_module
-    
+
     app.register_blueprint(auth_bp)
     app.register_blueprint(azure_bp_module)
     
-
     return app
 
 if __name__ == "__main__":

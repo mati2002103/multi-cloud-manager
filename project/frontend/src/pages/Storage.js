@@ -100,7 +100,8 @@ const Storage = () => {
               <th style={thStyle}>Typ Storage</th>
               <th style={thStyle}>HTTPS Only</th>
               <th style={thStyle}>Subskrypcja</th>
-              <th style={thStyle}>Akcje</th>
+              <th style={thStyle}>Delete</th>
+              <th style={thStyle}>Folders</th>
             </tr>
           </thead>
           <tbody>
@@ -116,12 +117,16 @@ const Storage = () => {
                 <td style={tdStyle}>{acc.subscriptionId}</td>
                 <td style={tdStyle}>
                   <button onClick={() => handleDelete(acc)}>🗑</button>
+                  </td>
+                  <td>
                   <button
-                    onClick={() => navigate(`/storage/${acc.name}`, { state: acc })}
-                    style={{ marginLeft: "5px" }}
-                  >
-                    📂 Szczegóły
-                  </button>
+                onClick={() => {
+                  sessionStorage.setItem("selectedStorageAccount", JSON.stringify(acc));
+                  navigate(`/storage/${acc.name}`, { state: acc });
+                }}
+                style={{ marginLeft: "5px" }}>
+                📂 Szczegóły
+              </button>
                 </td>
               </tr>
             ))}

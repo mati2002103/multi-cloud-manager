@@ -8,6 +8,7 @@ import Subscriptions from "./pages/Subscriptions";
 import Accounts from "./pages/Accounts";
 import Networks from "./pages/Networks";
 import VMMonitor from "./pages/VmMonitor";
+import StorageBlobContainers from "./pages/StorageBlobContainers";
 import Storage from "./pages/Storage";
 
 import Home from "./pages/Home"; // 🔥 Landing Page
@@ -51,6 +52,7 @@ function App() {
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
                     <Route path="/Storage" element={<Storage />} />
+                    <Route path="/storage/:name" element={<StorageBlobContainers />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>
                 </div>

@@ -7,8 +7,12 @@ from .vmmonitor import vm_az_monitor_metrics,agent_status,ensure_ama
 from .vm import list_virtual_machines, create_vm,delete_vm
 from .containers import list_containers,create_container,delete_container,restart_container
 from .log_analytics import create_log_analytics,list_log_analytics,list_dcr,create_dcr,logs_basic
-from .storage import list_storage_accounts,create_storage_account,delete_storage_account,list_blob_containers,create_blob_container,delete_blob_container
+from .storage import (
+    list_storage_accounts,create_storage_account,delete_storage_account,
+    list_blob_containers,create_blob_container,delete_blob_container,
+    list_blobs,upload_blob,download_blob,delete_blob
 
+)
 from .utils import api_user, api_subscriptions, logout, api_accounts
 
 azure_bp_module = Blueprint("azure_module", __name__)
@@ -33,7 +37,11 @@ azure_bp_module.route("/api/<storage_account_id>/list_blob_containers", methods=
 azure_bp_module.route("/api/<storage_account_id>/create_blob_container", methods=["POST"])(create_blob_container)
 azure_bp_module.route("/api/<storage_account_id>/delete_blob_container", methods=["DELETE"])(delete_blob_container)
 
-
+#Blobs
+azure_bp_module.route("/api/<storage_account_id>/list_blobs", methods=["POST"])(list_blobs)
+azure_bp_module.route("/api/<storage_account_id>/upload_blob", methods=["POST"])(upload_blob)
+azure_bp_module.route("/api/<storage_account_id>/delete_blob", methods=["DELETE"])(delete_blob)
+azure_bp_module.route("/api/<storage_account_id>/download_blob", methods=["POST"])(download_blob)
 
 # Subnet
 azure_bp_module.route("/api/subnetCreate", methods=["POST"])(subnet_create)
