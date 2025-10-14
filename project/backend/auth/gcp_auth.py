@@ -17,19 +17,22 @@ def login_google():
         f"?client_id={GOOGLE_CLIENT_ID}"
         f"&redirect_uri={GOOGLE_REDIRECT_URI}"
         "&response_type=code"
-        "&scope=openid%20email%20profile"
+        "&scope=openid%20email%20profile%20https://www.googleapis.com/auth/cloud-platform.read-only"
         "&access_type=offline"
         "&prompt=consent%20select_account"
     )
     return redirect(url)
 
 @gcp_auth.route("/google/callback")
+
+
+@gcp_auth.route("/google/callback")
 def google_callback():
     code = request.args.get("code")
     if not code:
-        return jsonify({"error": "Brak kodu Google"}), 401
+        return jsonify({"error": "Brak kodu autoryzacyjnego Google w odpowiedzi"}), 401
 
-    token_res = http_requests.post("https://oauth2.googleapis.com/token", data={
+    token_res = http_requests.post(TOKEN_URI, data={
         "code": code,
         "client_id": GOOGLE_CLIENT_ID,
         "client_secret": GOOGLE_CLIENT_SECRET,
@@ -38,24 +41,47 @@ def google_callback():
     })
 
     if token_res.status_code != 200:
-        return jsonify({"error": "Błąd wymiany kodu"}), 500
+        error_details = token_res.json()
+        print(f"DEBUG: Błąd podczas wymiany kodu na token: {error_details}")
+        return jsonify({"error": "Błąd wymiany kodu na token", "details": error_details}), 500
 
     token_data = token_res.json()
     id_token_str = token_data.get("id_token")
     access_token = token_data.get("access_token")
+    refresh_token = token_data.get("refresh_token")
 
     try:
-        idinfo = id_token.verify_oauth2_token(id_token_str, google_requests.Request(), GOOGLE_CLIENT_ID)
+        idinfo = id_token.verify_oauth2_token(
+            id_token_str, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=10
+        )
     except Exception as e:
-        return jsonify({"error": f"Błąd weryfikacji tokenu: {str(e)}"}), 401
+        print(f"DEBUG: Błąd weryfikacji tokenu ID: {str(e)}")
+        return jsonify({"error": "Błąd weryfikacji tokenu ID", "details": str(e)}), 401
 
-    gcp_account = {
+    new_gcp_account = {
         "provider": "gcp",
         "email": idinfo.get("email"),
         "displayName": idinfo.get("name"),
-        "access_token": access_token
+        "access_token": access_token,
+        "refresh_token": refresh_token
     }
 
-    session.setdefault("accounts", []).append(gcp_account)
+    accounts = session.setdefault("accounts", [])
+    print(f"DEBUG: Konta w sesji PRZED aktualizacją: {accounts}")
 
-    return redirect(os.getenv("FRONTEND_URL", "http://localhost:3000") + "/dashboard")
+    account_found = False
+    for i, acc in enumerate(accounts):
+        if acc.get("email") == new_gcp_account["email"] and acc.get("provider") == "gcp":
+            accounts[i] = new_gcp_account
+            account_found = True
+            print(f"DEBUG: Zaktualizowano konto: {new_gcp_account['email']}")
+            break
+
+    if not account_found:
+        accounts.append(new_gcp_account)
+        print(f"DEBUG: Dodano nowe konto: {new_gcp_account['email']}")
+
+    session.modified = True
+
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
+    return redirect(f"{frontend_url}/Accounts")
