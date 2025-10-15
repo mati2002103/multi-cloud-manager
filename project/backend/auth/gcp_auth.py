@@ -4,11 +4,13 @@ import requests as http_requests
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
-gcp_auth = Blueprint("gcp_auth", __name__)
-
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
+TOKEN_URI = "https://oauth2.googleapis.com/token"
+
+gcp_auth = Blueprint("gcp_auth", __name__)
+
 
 @gcp_auth.route("/api/login/google")
 def login_google():
@@ -22,8 +24,6 @@ def login_google():
         "&prompt=consent%20select_account"
     )
     return redirect(url)
-
-@gcp_auth.route("/google/callback")
 
 
 @gcp_auth.route("/google/callback")
@@ -42,7 +42,6 @@ def google_callback():
 
     if token_res.status_code != 200:
         error_details = token_res.json()
-        print(f"DEBUG: Błąd podczas wymiany kodu na token: {error_details}")
         return jsonify({"error": "Błąd wymiany kodu na token", "details": error_details}), 500
 
     token_data = token_res.json()
@@ -55,7 +54,6 @@ def google_callback():
             id_token_str, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=10
         )
     except Exception as e:
-        print(f"DEBUG: Błąd weryfikacji tokenu ID: {str(e)}")
         return jsonify({"error": "Błąd weryfikacji tokenu ID", "details": str(e)}), 401
 
     new_gcp_account = {
@@ -67,19 +65,16 @@ def google_callback():
     }
 
     accounts = session.setdefault("accounts", [])
-    print(f"DEBUG: Konta w sesji PRZED aktualizacją: {accounts}")
 
     account_found = False
     for i, acc in enumerate(accounts):
         if acc.get("email") == new_gcp_account["email"] and acc.get("provider") == "gcp":
             accounts[i] = new_gcp_account
             account_found = True
-            print(f"DEBUG: Zaktualizowano konto: {new_gcp_account['email']}")
             break
 
     if not account_found:
         accounts.append(new_gcp_account)
-        print(f"DEBUG: Dodano nowe konto: {new_gcp_account['email']}")
 
     session.modified = True
 

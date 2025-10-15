@@ -1,5 +1,3 @@
-# utils.py
-
 from flask import jsonify, session
 from google.oauth2.credentials import Credentials
 import googleapiclient.discovery
@@ -7,7 +5,6 @@ import requests
 import os
 from datetime import datetime, timedelta
 
-# Centralne miejsce do wczytywania zmiennych, aby uniknąć powtórzeń
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 TOKEN_URI = "https://oauth2.googleapis.com/token"
@@ -18,9 +15,8 @@ class SessionCredentials(Credentials):
         self._refresh_token = account_info.get("refresh_token")
         self.account_email = account_info.get("email")
 
-        # Wywołujemy konstruktor klasy nadrzędnej
         super().__init__(
-            access_token, # Token jako pierwszy, pozycyjny argument
+            access_token,
             refresh_token=self._refresh_token,
             token_uri=TOKEN_URI,
             client_id=GOOGLE_CLIENT_ID,
@@ -29,7 +25,6 @@ class SessionCredentials(Credentials):
         )
 
     def refresh(self, request):
-        print(f"DEBUG: Token dla {self.account_email} wygasł. Próba odświeżenia...")
         if not self._refresh_token:
             raise ValueError("Brak refresh_token. Nie można odświeżyć poświadczeń.")
 
@@ -79,7 +74,6 @@ def list_gcp_projects(credentials: Credentials):
         })
     return projects_list
 
-
 def api_gcp_accounts():
     all_accounts = session.get("accounts", [])
     gcp_accounts_with_details = []
@@ -105,3 +99,24 @@ def api_gcp_accounts():
         gcp_accounts_with_details.append(gcp_account_data)
             
     return jsonify({"value": gcp_accounts_with_details})
+
+def api_gcp_projects():
+    accounts = session.get("accounts", [])
+    gcp_projects = []
+
+    for acc in accounts:
+        if acc.get("provider") != "gcp" or not acc.get("refresh_token"):
+            continue
+            
+        try:
+            credentials = SessionCredentials(acc)
+            projects = list_gcp_projects(credentials)
+            gcp_projects.extend(projects)
+            
+        except Exception as e:
+            print(f"Błąd listowania projektów dla konta {acc.get('email')}: {str(e)}")
+            return jsonify({
+                "error": f"Błąd listowania projektów dla konta {acc.get('email')}: {str(e)}"
+            }), 500
+            
+    return jsonify({"value": gcp_projects})

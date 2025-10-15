@@ -1,15 +1,13 @@
-# gcp/routes.py
-
 from flask import Blueprint, session, jsonify
 from .utils import api_gcp_projects,api_gcp_accounts
+from .storage import list_gcp_buckets
 
 gcp_api = Blueprint("gcp_api", __name__)
 
-@gcp_api.route("/debug/session")
-def debug_session():
-    # Zwraca całą zawartość sesji, włączając 'accounts'
-    return jsonify({"session_data": dict(session)})
 
+#account and projects
 gcp_api.route("/api/account/google/projects", methods=["GET"])(api_gcp_projects)
 gcp_api.route("/api/account/gcp", methods=["GET"])(api_gcp_accounts)
 
+#storage
+gcp_api.route("/api/projects/list_buckets", methods=["GET"])(list_gcp_buckets)

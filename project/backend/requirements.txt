@@ -23,3 +23,7 @@ google-auth-oauthlib
 google-auth-httplib2
 google-api-python-client
 google-cloud-storage
+google-cloud-resource-manager
+google-cloud-exceptions
+
+six

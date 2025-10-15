@@ -3,27 +3,46 @@ import { useNavigate } from "react-router-dom";
 import CreateStorageAccountModal from "../components/CreateStorageAccountModal";
 
 const Storage = () => {
-  const [accounts, setAccounts] = useState([]);
+  const [azureAccounts, setAzureAccounts] = useState([]);
+  const [gcpProjects, setGcpProjects] = useState([]);
+  
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const navigate = useNavigate();
 
-  const fetchStorageAccounts = async () => {
+  const fetchAllStorageResources = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/list_storage_accounts", {
-        credentials: "include",
-      });
+      const [azureRes, gcpRes] = await Promise.allSettled([
+        fetch("/api/list_storage_accounts", { credentials: "include" }),
+        fetch("/api/projects/list_buckets", { credentials: "include" }),
+      ]);
 
-      if (!res.ok) throw new Error(`Błąd HTTP: ${res.status}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
+      let errors = [];
 
-      setAccounts(data.value || []);
+      if (azureRes.status === "fulfilled" && azureRes.value.ok) {
+        const data = await azureRes.value.json();
+        setAzureAccounts(data.value || []);
+      } else {
+        errors.push("Nie udało się pobrać danych z Azure.");
+        setAzureAccounts([]);
+      }
+
+      if (gcpRes.status === "fulfilled" && gcpRes.value.ok) {
+        const data = await gcpRes.value.json();
+        setGcpProjects(data.value || []);
+      } else {
+        errors.push("Nie udało się pobrać danych z GCP.");
+        setGcpProjects([]); 
+      }
+      
+      if (errors.length > 0) setError(errors.join(' '));
+      if (errors.length === 2) setError("Nie udało się pobrać danych z żadnej chmury.");
+
     } catch (err) {
-      console.error("Błąd pobierania Storage Accounts:", err);
+      console.error("Błąd krytyczny podczas pobierania zasobów:", err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -31,10 +50,10 @@ const Storage = () => {
   };
 
   useEffect(() => {
-    fetchStorageAccounts();
+    fetchAllStorageResources();
   }, []);
 
-  const handleDelete = async (account) => {
+  const handleDeleteAzure = async (account) => {
     if (!window.confirm(`Czy na pewno chcesz usunąć Storage Account "${account.name}"?`)) return;
 
     try {
@@ -48,90 +67,120 @@ const Storage = () => {
           accountName: account.name
         }),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd usuwania Storage Account");
-
-      fetchStorageAccounts();
+      fetchAllStorageResources();
     } catch (err) {
       alert(`❌ ${err.message}`);
     }
   };
 
   return (
-    <div style={{ padding: "20px", maxWidth: "1000px", margin: "0 auto" }}>
-      <h1>📦 Storage Accounts (Azure)</h1>
-      <p>Lista wszystkich kont Storage w Twoim środowisku Azure.</p>
+    <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
+      <h1>📦 Zasoby Storage (Multi-Cloud)</h1>
+      <p>Lista wszystkich kont Storage (Azure) i bucketów (GCP) w Twoim środowisku.</p>
 
-      <button
-        onClick={fetchStorageAccounts}
-        style={buttonStyle}
-      >
-        🔄 Odśwież
+      <button onClick={fetchAllStorageResources} style={buttonStyle}>
+        🔄 Odśwież wszystko
       </button>
-      <button
-        onClick={() => setShowModal(true)}
-        style={buttonStyle}
-      >
-        ➕ Utwórz Storage Account
+      <button onClick={() => setShowModal(true)} style={buttonStyle}>
+        ➕ Utwórz Storage Account (Azure)
       </button>
 
       <CreateStorageAccountModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}
-        onCreated={fetchStorageAccounts}
+        onCreated={fetchAllStorageResources}
       />
 
       {loading ? (
-        <p>⏳ Ładowanie danych...</p>
+        <p>⏳ Ładowanie danych z wszystkich chmur...</p>
       ) : error ? (
         <p style={{ color: "red" }}>❌ Błąd: {error}</p>
-      ) : accounts.length === 0 ? (
-        <p>Brak dostępnych Storage Accounts.</p>
       ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr style={{ backgroundColor: "#f5f5f5" }}>
-              <th style={thStyle}>Nazwa</th>
-              <th style={thStyle}>Resource Group</th>
-              <th style={thStyle}>Lokalizacja</th>
-              <th style={thStyle}>SKU</th>
-              <th style={thStyle}>Access Tier</th>
-              <th style={thStyle}>Typ Storage</th>
-              <th style={thStyle}>HTTPS Only</th>
-              <th style={thStyle}>Subskrypcja</th>
-              <th style={thStyle}>Delete</th>
-              <th style={thStyle}>Folders</th>
-            </tr>
-          </thead>
-          <tbody>
-            {accounts.map((acc, idx) => (
-              <tr key={idx}>
-                <td style={tdStyle}>{acc.name}</td>
-                <td style={tdStyle}>{acc.resourceGroup}</td>
-                <td style={tdStyle}>{acc.location}</td>
-                <td style={tdStyle}>{acc.sku}</td>
-                <td style={tdStyle}>{acc.accessTier || "—"}</td>
-                <td style={tdStyle}>{acc.storageType?.value || acc.storageType || "—"}</td>
-                <td style={tdStyle}>{acc.httpsOnly ? "✅" : "❌"}</td>
-                <td style={tdStyle}>{acc.subscriptionId}</td>
-                <td style={tdStyle}>
-                  <button onClick={() => handleDelete(acc)}>🗑</button>
-                  </td>
-                  <td>
-                  <button
-                onClick={() => {
-                  sessionStorage.setItem("selectedStorageAccount", JSON.stringify(acc));
-                  navigate(`/storage/${acc.name}`, { state: acc });
-                }}
-                style={{ marginLeft: "5px" }}>
-                📂 Szczegóły
-              </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <>
+          {/* SEKCJA DLA AZURE */}
+          <div style={{ marginTop: '30px' }}>
+            <h2>
+              Azure Storage Accounts
+            </h2>
+            {azureAccounts.length === 0 ? (
+              <p>Brak dostępnych Storage Accounts w Azure.</p>
+            ) : (
+              <table style={tableStyle}>
+                <thead>
+                  <tr style={{ backgroundColor: "#f5f5f5" }}>
+                    <th style={thStyle}>Nazwa</th>
+                    <th style={thStyle}>Grupa zasobów</th>
+                    <th style={thStyle}>Lokalizacja</th>
+                    <th style={thStyle}>SKU</th>
+                    <th style={thStyle}>Akcje</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {azureAccounts.map((acc, idx) => (
+                    <tr key={idx}>
+                      <td style={tdStyle}>{acc.name}</td>
+                      <td style={tdStyle}>{acc.resourceGroup}</td>
+                      <td style={tdStyle}>{acc.location}</td>
+                      <td style={tdStyle}>{acc.sku}</td>
+                      <td style={tdStyle}>
+                        <button onClick={() => handleDeleteAzure(acc)} title="Usuń">🗑️</button>
+                        <button
+                          onClick={() => {
+                            sessionStorage.setItem("selectedStorageAccount", JSON.stringify(acc));
+                            navigate(`/storage/${acc.name}`, { state: acc });
+                          }}
+                          title="Szczegóły" style={{ marginLeft: "5px" }}>
+                          📂
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* SEKCJA DLA GCP */}
+          <div style={{ marginTop: '40px' }}>
+            <h2>
+              Google Cloud Storage Buckets
+            </h2>
+            {gcpProjects.length === 0 ? (
+              <p>Brak dostępnych bucketów w GCP.</p>
+            ) : (
+              <table style={tableStyle}>
+                <thead>
+                  <tr style={{ backgroundColor: "#f5f5f5" }}>
+                    <th style={thStyle}>Nazwa Bucketa</th>
+                    <th style={thStyle}>Projekt</th>
+                    <th style={thStyle}>Lokalizacja</th>
+                    <th style={thStyle}>Klasa Storage</th>
+                    <th style={thStyle}>Akcje</th>
+
+                  </tr>
+                </thead>
+                <tbody>
+                  {gcpProjects.flatMap(project =>
+                    project.buckets.map(bucket => (
+                      <tr key={`${project.projectId}-${bucket.name}`}>
+                        <td style={tdStyle}>{bucket.name}</td>
+                        <td style={tdStyle}>{project.displayName} ({project.projectId})</td>
+                        <td style={tdStyle}>{bucket.location}</td>
+                        <td style={tdStyle}>{bucket.storageClass}</td>
+                        
+                        <button onClick={() => handleDeleteGCP(bucket.name)} title="Usuń">🗑️</button>
+
+
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
       )}
     </div>
   );
