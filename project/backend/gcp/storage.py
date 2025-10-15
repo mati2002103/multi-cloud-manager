@@ -1,5 +1,5 @@
 from google.oauth2.credentials import Credentials
-from google.cloud.exceptions import Conflict, Forbidden
+from google.cloud.exceptions import Conflict, Forbidden,NotFound
 from google.cloud import storage,resourcemanager_v3
 from flask import session,jsonify,request
 from .utils import SessionCredentials,list_gcp_projects
@@ -140,3 +140,40 @@ def create_gcp_bucket():
         return jsonify({"error": f"Brak uprawnień do tworzenia bucketa w projekcie '{project_id}'. Sprawdź uprawnienia IAM. Szczegóły: {e}"}), 403
     except Exception as e:
         return jsonify({"error": f"Wystąpił nieoczekiwany błąd serwera: {str(e)}"}), 500
+
+
+def list_bucket_blobs(bucket_name):
+    accounts = session.get("accounts", [])
+    gcp_account = next((acc for acc in accounts if acc.get("provider") == "gcp"), None)
+
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 401
+    
+    if not gcp_account.get("refresh_token"):
+         return jsonify({"error": "Brak kompletnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Brak danych w ciele żądania."}), 400
+        
+    project_id = data.get("projectId")
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        storage_client = storage.Client(project=project_id, credentials=credentials)
+        bucket = storage_client.get_bucket(bucket_name)
+
+        
+        blobs = list(bucket.list_blobs())
+        
+        result = [{"name": b.name, "size": b.size, "updated": b.updated.isoformat()} for b in blobs]
+        
+        return jsonify({"value": result})
+
+
+    except NotFound:
+        return jsonify({"error": f"Bucket o nazwie '{bucket_name}' nie istnieje."}), 404
+    except Forbidden:
+        return jsonify({"error": f"Brak uprawnień do listowania obiektów w buckecie '{bucket_name}'."}), 403
+    except Exception as e:
+        return jsonify({"error": f"Wystąpił nieoczekiwany błąd serwera: {str(e)}"}), 500    

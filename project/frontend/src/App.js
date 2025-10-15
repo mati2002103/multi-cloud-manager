@@ -10,6 +10,7 @@ import Networks from "./pages/Networks";
 import VMMonitor from "./pages/VmMonitor";
 import StorageBlobContainers from "./pages/StorageBlobContainers";
 import Storage from "./pages/Storage";
+import GCPBucketContents from './pages/GCPBucketContents';
 
 import Home from "./pages/Home"; // 🔥 Landing Page
 
@@ -53,6 +54,7 @@ function App() {
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
                     <Route path="/Storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />
+                    <Route path="/storage/gcp/:bucketName" element={<GCPBucketContents />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>
                 </div>

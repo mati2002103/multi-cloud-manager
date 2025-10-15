@@ -235,6 +235,15 @@ const Storage = () => {
                         <td style={tdStyle}>{project.displayName} ({project.projectId})</td>
                         <td style={tdStyle}>{bucket.location}</td>
                         <td style={tdStyle}>{bucket.storageClass}</td>                        
+                            <button
+                          onClick={() => {
+                            sessionStorage.setItem("selectedBucket", JSON.stringify(bucket));
+                            navigate(`/storage/gcp/${bucket.name}`, { state: bucket });
+                          }}
+                          title="Szczegóły" style={{ marginLeft: "5px" }}>
+                          📂
+                        </button>
+
                         <button onClick={() => handleDeleteGCP(bucket)} title="Usuń">🗑️</button>
                       </tr>
                     ))
