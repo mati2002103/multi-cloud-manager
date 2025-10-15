@@ -21,7 +21,7 @@ class SessionCredentials(Credentials):
             token_uri=TOKEN_URI,
             client_id=GOOGLE_CLIENT_ID,
             client_secret=GOOGLE_CLIENT_SECRET,
-            scopes=['https://www.googleapis.com/auth/cloud-platform.read-only']
+            scopes=['https://www.googleapis.com/auth/cloud-platform']
         )
 
     def refresh(self, request):
@@ -55,6 +55,16 @@ class SessionCredentials(Credentials):
                 session.modified = True
                 print(f"DEBUG: Zaktualizowano token w sesji dla {self.account_email}.")
                 break
+    @property
+    def valid(self):
+        return self.token is not None and not self.expired
+
+    @property
+    def expired(self):
+        return self.expiry is not None and datetime.utcnow() >= self.expiry
+
+    def apply(self, headers, token=None):
+        headers["authorization"] = f"Bearer {token or self.token}"
 
 def list_gcp_projects(credentials: Credentials):
     service = googleapiclient.discovery.build(

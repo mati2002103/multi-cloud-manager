@@ -19,7 +19,7 @@ def login_google():
         f"?client_id={GOOGLE_CLIENT_ID}"
         f"&redirect_uri={GOOGLE_REDIRECT_URI}"
         "&response_type=code"
-        "&scope=openid%20email%20profile%20https://www.googleapis.com/auth/cloud-platform.read-only"
+        "&scope=openid%20email%20profile%20https://www.googleapis.com/auth/cloud-platform"
         "&access_type=offline"
         "&prompt=consent%20select_account"
     )

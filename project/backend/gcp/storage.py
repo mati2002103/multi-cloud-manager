@@ -3,6 +3,7 @@ from google.cloud.exceptions import Conflict, Forbidden
 from google.cloud import storage,resourcemanager_v3
 from flask import session,jsonify,request
 from .utils import SessionCredentials,list_gcp_projects
+from google.auth.transport.requests import Request
 
 
 def list_gcp_buckets():
@@ -55,28 +56,87 @@ def list_gcp_buckets():
     
 def delete_gcp_bucket():
     accounts = session.get("accounts", [])
-    gcp_account = None
-    for acc in accounts:
-        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
-            gcp_account = acc
-            break
+    gcp_account = next((acc for acc in accounts if acc.get("provider") == "gcp"), None)
+
     if not gcp_account:
-        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
-    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
-        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 401
+    
+    if not gcp_account.get("refresh_token"):
+         return jsonify({"error": "Brak kompletnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
     data = request.get_json()
+    if not data:
+        return jsonify({"error": "Brak danych w ciele żądania."}), 400
+        
     bucket_name = data.get("bucketName")
-    forceDelete = data.get("forceDelete")
+    force_delete = data.get("force", False)
+    project_id = data.get("projectId")
+
+    if not bucket_name:
+        return jsonify({"error": "Nazwa bucketa ('bucketName') jest wymagana."}), 400
+
     try:
         credentials = SessionCredentials(gcp_account)
-        storage_client = storage.Client(credentials=credentials)
+        credentials.refresh(Request())
+        storage_client = storage.Client(project=project_id, credentials=credentials)
         bucket = storage_client.get_bucket(bucket_name)
-        if forceDelete==True:
-            bucket.delete_blobs(bucket.list_blobs(all_versions=True))
+
+        if force_delete:
+            blobs = list(bucket.list_blobs())
+            bucket.delete_blobs(blobs)
         bucket.delete()
-        return True
-    except Conflict as e:
-        raise Exception(f"Bucket '{bucket_name}' nie jest pusty. Opróżnij go przed usunięciem.") from e
-    except Forbidden as e:
-        raise Exception(f"Brak uprawnień do usunięcia bucketa '{bucket_name}'.") from e
+        
+        return jsonify({"message": f"Bucket '{bucket_name}' został pomyślnie usunięty."}), 200
+
+    except Conflict:
+        return jsonify({"error": f"Bucket '{bucket_name}' nie jest pusty. Opróżnij go lub użyj opcji usuwania z zawartością."}), 409
+    except Forbidden:
+        return jsonify({"error": f"Brak uprawnień do usunięcia bucketa '{bucket_name}'. Sprawdź, czy logowałeś się z pełnymi uprawnieniami (nie read-only)."}), 403
+    except Exception as e:
+        return jsonify({"error": f"Wystąpił nieoczekiwany błąd serwera: {str(e)}"}), 500
     
+def create_gcp_bucket():
+    accounts = session.get("accounts", [])
+    gcp_account = next((acc for acc in accounts if acc.get("provider") == "gcp"), None)
+
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 401
+    
+    if not gcp_account.get("refresh_token"):
+         return jsonify({"error": "Brak kompletnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Brak danych w ciele żądania."}), 400
+        
+    bucket_name = data.get("bucketName")
+    project_id = data.get("projectId")
+    storage_class = data.get("storageClass", "STANDARD")
+    location = data.get("location") 
+
+    if not all([bucket_name, project_id, location]):
+        return jsonify({"error": "Pola 'bucketName', 'projectId' oraz 'location' są wymagane."}), 400
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        credentials.refresh(Request())
+
+        storage_client = storage.Client(project=project_id, credentials=credentials)
+
+        bucket = storage_client.bucket(bucket_name)
+        bucket.storage_class = storage_class
+        
+        bucket.iam_configuration.uniform_bucket_level_access_enabled = True
+
+        new_bucket = storage_client.create_bucket(bucket, location=location)
+        
+        return jsonify({
+            "message": f"Bucket '{new_bucket.name}' został pomyślnie utworzony w lokalizacji '{new_bucket.location}'."
+        }), 201 
+
+    except Conflict:
+        return jsonify({"error": f"Nazwa bucketa '{bucket_name}' jest już zajęta. Nazwy bucketów muszą być unikalne globalnie."}), 409
+    except Forbidden as e:
+        return jsonify({"error": f"Brak uprawnień do tworzenia bucketa w projekcie '{project_id}'. Sprawdź uprawnienia IAM. Szczegóły: {e}"}), 403
+    except Exception as e:
+        return jsonify({"error": f"Wystąpił nieoczekiwany błąd serwera: {str(e)}"}), 500
