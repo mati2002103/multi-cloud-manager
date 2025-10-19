@@ -1,10 +1,10 @@
 from google.oauth2.credentials import Credentials
 from google.cloud.exceptions import Conflict, Forbidden,NotFound
 from google.cloud import storage,resourcemanager_v3
-from flask import session,jsonify,request
+from flask import session,jsonify,request,send_file
 from .utils import SessionCredentials,list_gcp_projects
 from google.auth.transport.requests import Request
-
+import io
 
 def list_gcp_buckets():
     accounts = session.get("accounts", [])
@@ -142,7 +142,7 @@ def create_gcp_bucket():
         return jsonify({"error": f"Wystąpił nieoczekiwany błąd serwera: {str(e)}"}), 500
 
 
-def list_bucket_blobs(bucket_name):
+def list_bucket_blobs():
     accounts = session.get("accounts", [])
     gcp_account = next((acc for acc in accounts if acc.get("provider") == "gcp"), None)
 
@@ -152,11 +152,9 @@ def list_bucket_blobs(bucket_name):
     if not gcp_account.get("refresh_token"):
          return jsonify({"error": "Brak kompletnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
 
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Brak danych w ciele żądania."}), 400
         
-    project_id = data.get("projectId")
+    bucket_name = request.args.get("bucketName")
+    project_id = request.args.get("projectId")
 
     try:
         credentials = SessionCredentials(gcp_account)
@@ -177,3 +175,91 @@ def list_bucket_blobs(bucket_name):
         return jsonify({"error": f"Brak uprawnień do listowania obiektów w buckecie '{bucket_name}'."}), 403
     except Exception as e:
         return jsonify({"error": f"Wystąpił nieoczekiwany błąd serwera: {str(e)}"}), 500    
+
+def upload_blob_to_bucket():
+    accounts = session.get("accounts", [])
+    gcp_account = next((acc for acc in accounts if acc.get("provider") == "gcp"), None)
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 401
+
+    try:
+        if 'file' not in request.files:
+            return jsonify({"error": "Brak pliku w żądaniu."}), 400
+
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "Nie wybrano pliku."}), 400
+
+        bucket_name = request.form.get("bucketName")
+        project_id = request.form.get("projectId")
+        if not all([bucket_name, project_id]):
+            return jsonify({"error": "Parametry 'bucketName' i 'projectId' są wymagane."}), 400
+
+        credentials = SessionCredentials(gcp_account)
+        storage_client = storage.Client(project=project_id, credentials=credentials)
+        bucket = storage_client.bucket(bucket_name)
+        
+        blob = bucket.blob(file.filename)
+        blob.upload_from_file(file)
+
+        return jsonify({"message": f"Plik '{file.filename}' został pomyślnie wysłany."}), 201
+
+    except Exception as e:
+        return jsonify({"error": f"Wystąpił błąd podczas wysyłania pliku: {e}"}), 500
+    
+def download_blob_from_bucket():
+    accounts = session.get("accounts", [])
+    gcp_account = next((acc for acc in accounts if acc.get("provider") == "gcp"), None)
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 401
+
+    try:
+        bucket_name = request.args.get("bucketName")
+        project_id = request.args.get("projectId")
+        blob_name = request.args.get("blobName")
+        if not all([bucket_name, project_id, blob_name]):
+            return jsonify({"error": "Parametry 'bucketName', 'projectId' i 'blobName' są wymagane."}), 400
+
+        credentials = SessionCredentials(gcp_account)
+        storage_client = storage.Client(project=project_id, credentials=credentials)
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+
+        file_buffer = io.BytesIO()
+        blob.download_to_file(file_buffer)
+        file_buffer.seek(0) 
+
+        return send_file(
+            file_buffer,
+            download_name=blob_name,
+            as_attachment=True,
+            mimetype=blob.content_type
+        )
+
+    except Exception as e:
+        return jsonify({"error": f"Wystąpił błąd podczas pobierania pliku: {e}"}), 500
+    
+def delete_blob_from_bucket():
+    accounts = session.get("accounts", [])
+    gcp_account = next((acc for acc in accounts if acc.get("provider") == "gcp"), None)
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 401
+
+    data = request.get_json()
+    bucket_name = data.get("bucketName")
+    project_id = data.get("projectId")
+    blob_name = data.get("blobName")
+    if not all([bucket_name, project_id, blob_name]):
+        return jsonify({"error": "Pola 'bucketName', 'projectId' i 'blobName' są wymagane."}), 400
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        storage_client = storage.Client(project=project_id, credentials=credentials)
+        bucket = storage_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        blob.delete()
+
+        return jsonify({"message": f"Plik '{blob_name}' został pomyślnie usunięty."}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Wystąpił błąd podczas usuwania pliku: {e}"}), 500

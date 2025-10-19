@@ -3,62 +3,64 @@ import { useNavigate } from "react-router-dom";
 import CreateStorageAccountModal from "../components/CreateStorageAccountModal";
 import CreateBucketGCPModal from "../components/CreateBucketGCPModal";
 
-
 const Storage = () => {
   const [azureAccounts, setAzureAccounts] = useState([]);
+  const [azureLoading, setAzureLoading] = useState(true);
+  const [azureError, setAzureError] = useState(null);
+
   const [gcpProjects, setGcpProjects] = useState([]);
-  
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [showModal, setShowModal] = useState(false);
+  const [gcpLoading, setGcpLoading] = useState(true);
+  const [gcpError, setGcpError] = useState(null);
+
+  const [showAzureModal, setShowAzureModal] = useState(false);
   const [showGCPModal, setShowGCPModal] = useState(false);
   const navigate = useNavigate();
 
-  const fetchAllStorageResources = async () => {
-    setLoading(true);
-    setError(null);
+  const fetchAzureAccounts = async () => {
+    setAzureLoading(true);
+    setAzureError(null);
     try {
-      const [azureRes, gcpRes] = await Promise.allSettled([
-        fetch("/api/list_storage_accounts", { credentials: "include" }),
-        fetch("/api/projects/list_buckets", { credentials: "include" }),
-      ]);
-
-      let errors = [];
-
-      if (azureRes.status === "fulfilled" && azureRes.value.ok) {
-        const data = await azureRes.value.json();
-        setAzureAccounts(data.value || []);
-      } else {
-        errors.push("Nie udało się pobrać danych z Azure.");
-        setAzureAccounts([]);
+      const res = await fetch("/api/list_storage_accounts", { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `Błąd HTTP: ${res.status}` }));
+        throw new Error(data.error || `Błąd HTTP: ${res.status}`);
       }
-
-      if (gcpRes.status === "fulfilled" && gcpRes.value.ok) {
-        const data = await gcpRes.value.json();
-        setGcpProjects(data.value || []);
-      } else {
-        errors.push("Nie udało się pobrać danych z GCP.");
-        setGcpProjects([]); 
-      }
-      
-      if (errors.length > 0) setError(errors.join(' '));
-      if (errors.length === 2) setError("Nie udało się pobrać danych z żadnej chmury.");
-
+      const data = await res.json();
+      setAzureAccounts(data.value || []);
     } catch (err) {
-      console.error("Błąd krytyczny podczas pobierania zasobów:", err);
-      setError(err.message);
+      console.error("Błąd pobierania danych z Azure:", err);
+      setAzureError(err.message);
     } finally {
-      setLoading(false);
+      setAzureLoading(false);
+    }
+  };
+
+  const fetchGCPBuckets = async () => {
+    setGcpLoading(true);
+    setGcpError(null);
+    try {
+      const res = await fetch("/api/projects/list_buckets", { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `Błąd HTTP: ${res.status}` }));
+        throw new Error(data.error || `Błąd HTTP: ${res.status}`);
+      }
+      const data = await res.json();
+      setGcpProjects(data.value || []);
+    } catch (err) {
+      console.error("Błąd pobierania danych z GCP:", err);
+      setGcpError(err.message);
+    } finally {
+      setGcpLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchAllStorageResources();
+    fetchAzureAccounts();
+    fetchGCPBuckets();
   }, []);
 
   const handleDeleteAzure = async (account) => {
     if (!window.confirm(`Czy na pewno chcesz usunąć Storage Account "${account.name}"?`)) return;
-
     try {
       const res = await fetch("/api/delete_storage_account", {
         method: "DELETE",
@@ -72,13 +74,22 @@ const Storage = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd usuwania Storage Account");
-      fetchAllStorageResources();
+      fetchAzureAccounts();
     } catch (err) {
       alert(`❌ ${err.message}`);
     }
   };
-   const handleDeleteGCP = async (bucket) => {
-    if (!window.confirm(`Czy na pewno chcesz spróbować usunąć bucket "${bucket.name}"?`)) return;
+
+  const handleDeleteGCP = async (resource) => {
+    const confirmMessage = `Aby usunąć bucket "${resource.name}" wraz z CAŁĄ ZAWARTOŚCIĄ, wpisz jego nazwę poniżej. Ta operacja jest NIEODWRACALNA.`;
+    const userInput = window.prompt(confirmMessage);
+
+    if (userInput !== resource.name) {
+      if (userInput !== null) {
+          alert("Nazwa bucketa nie zgadza się. Anulowano usuwanie.");
+      }
+      return;
+    }
 
     try {
       const res = await fetch("/api/projects/delete_bucket", {
@@ -86,47 +97,15 @@ const Storage = () => {
         credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          bucketName: bucket.name,
-          projectId: bucket.projectId, 
-          force: false
+          bucketName: resource.name,
+          projectId: resource.projectId,
+          force: true
         }),
       });
-
       const data = await res.json();
-
-      if (res.ok) {
-        alert(`✅ ${data.message}`);
-        fetchAllStorageResources();
-        return; 
-      }
-      
-      if (res.status === 409) {
-        const forceConfirm = window.confirm(
-          `❌ Bucket "${bucket.name}" nie jest pusty.\n\nCzy chcesz go usunąć wraz z całą zawartością? Ta operacja jest NIEODWRACALNA.`
-        );
-
-        if (forceConfirm) {
-          const forceRes = await fetch("/api/projects/delete_bucket", {
-            method: "DELETE",
-            credentials: "include",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              bucketName: bucket.name,
-              projectId: bucket.projectId,
-              force: true 
-            }),
-          });
-          
-          const forceData = await forceRes.json();
-          if (!forceRes.ok) throw new Error(forceData.error || "Błąd podczas usuwania z zawartością.");
-          
-          alert(`✅ ${forceData.message}`);
-          fetchAllStorageResources();
-        }
-      } else {
-        
-        throw new Error(data.error || "Wystąpił nieoczekiwany błąd.");
-      }
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania bucketa");
+      alert(`✅ ${data.message}`);
+      fetchGCPBuckets();
     } catch (err) {
       alert(`❌ ${err.message}`);
     }
@@ -136,124 +115,120 @@ const Storage = () => {
     <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
       <h1>📦 Zasoby Storage (Multi-Cloud)</h1>
       <p>Lista wszystkich kont Storage (Azure) i bucketów (GCP) w Twoim środowisku.</p>
-        <button onClick={fetchAllStorageResources} style={buttonStyle}>
+      
+      <button onClick={() => { fetchAzureAccounts(); fetchGCPBuckets(); }} style={buttonStyle}>
         🔄 Odśwież wszystko
       </button>
 
-    
-    
+      <div style={{ marginTop: '30px', marginBottom: '40px' }}>
+        <h2>Azure Storage Accounts</h2>
+        <button onClick={() => setShowAzureModal(true)} style={buttonStyle}>
+          ➕ Utwórz Storage Account (Azure)
+        </button>
+        <CreateStorageAccountModal
+          isOpen={showAzureModal}
+          onClose={() => setShowAzureModal(false)}
+          onCreated={fetchAzureAccounts}
+        />
+        {azureLoading ? (
+          <p>⏳ Ładowanie danych z Azure...</p>
+        ) : azureError ? (
+          <p style={{ color: "red" }}>❌ Błąd Azure: {azureError}</p>
+        ) : azureAccounts.length === 0 ? (
+          <p>Brak dostępnych Storage Accounts w Azure (lub nie jesteś zalogowany).</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr style={{ backgroundColor: "#f5f5f5" }}>
+                <th style={thStyle}>Nazwa</th>
+                <th style={thStyle}>Grupa zasobów</th>
+                <th style={thStyle}>Lokalizacja</th>
+                <th style={thStyle}>SKU</th>
+                <th style={thStyle}>Akcje</th>
+              </tr>
+            </thead>
+            <tbody>
+              {azureAccounts.map((acc, idx) => (
+                <tr key={idx}>
+                  <td style={tdStyle}>{acc.name}</td>
+                  <td style={tdStyle}>{acc.resourceGroup}</td>
+                  <td style={tdStyle}>{acc.location}</td>
+                  <td style={tdStyle}>{acc.sku}</td>
+                  <td style={tdStyle}>
+                    <button onClick={() => handleDeleteAzure(acc)} title="Usuń">🗑️</button>
+                    <button
+                      onClick={() => {
+                        sessionStorage.setItem("selectedStorageAccount", JSON.stringify(acc));
+                        navigate(`/storage/${acc.name}`, { state: acc });
+                      }}
+                      title="Szczegóły" style={{ marginLeft: "5px" }}>
+                      📂
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
 
-      {loading ? (
-        <p>⏳ Ładowanie danych z wszystkich chmur...</p>
-      ) : error ? (
-        <p style={{ color: "red" }}>❌ Błąd: {error}</p>
-      ) : (
-        <>
-          {/* SEKCJA DLA AZURE */}
-          <div style={{ marginTop: '30px' }}>
-            <h2>
-              Azure Storage Accounts
-            </h2>
-              <button onClick={() => setShowModal(true)} style={buttonStyle}>
-        ➕ Utwórz Storage Account (Azure)
-      </button>
-
-      <CreateStorageAccountModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onCreated={fetchAllStorageResources}
-      />
-            {azureAccounts.length === 0 ? (
-              <p>Brak dostępnych Storage Accounts w Azure.</p>
-            ) : (
-              <table style={tableStyle}>
-                <thead>
-                  <tr style={{ backgroundColor: "#f5f5f5" }}>
-                    <th style={thStyle}>Nazwa</th>
-                    <th style={thStyle}>Grupa zasobów</th>
-                    <th style={thStyle}>Lokalizacja</th>
-                    <th style={thStyle}>SKU</th>
-                    <th style={thStyle}>Akcje</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {azureAccounts.map((acc, idx) => (
-                    <tr key={idx}>
-                      <td style={tdStyle}>{acc.name}</td>
-                      <td style={tdStyle}>{acc.resourceGroup}</td>
-                      <td style={tdStyle}>{acc.location}</td>
-                      <td style={tdStyle}>{acc.sku}</td>
+      <div>
+        <h2>Google Cloud Storage Buckets</h2>
+        <button onClick={() => setShowGCPModal(true)} style={buttonStyle}>
+          ➕ Utwórz Bucket (GCP)
+        </button>
+        <CreateBucketGCPModal
+          isOpen={showGCPModal}
+          onClose={() => setShowGCPModal(false)}
+          onCreated={fetchGCPBuckets}
+        />
+        {gcpLoading ? (
+          <p>⏳ Ładowanie danych z GCP...</p>
+        ) : gcpError ? (
+          <p style={{ color: "red" }}>❌ Błąd GCP: {gcpError}</p>
+        ) : gcpProjects.length === 0 ? (
+          <p>Brak dostępnych bucketów w GCP (lub nie jesteś zalogowany).</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr style={{ backgroundColor: "#f5f5f5" }}>
+                <th style={thStyle}>Nazwa Bucketa</th>
+                <th style={thStyle}>Projekt</th>
+                <th style={thStyle}>Lokalizacja</th>
+                <th style={thStyle}>Klasa Storage</th>
+                <th style={thStyle}>Akcje</th>
+              </tr>
+            </thead>
+            <tbody>
+              {gcpProjects.flatMap(project =>
+                project.buckets.map(bucket => {
+                  const resourceInfo = { ...bucket, projectId: project.projectId, projectDisplayName: project.displayName };
+                  return (
+                    <tr key={`${project.projectId}-${bucket.name}`}>
+                      <td style={tdStyle}>{bucket.name}</td>
+                      <td style={tdStyle}>{project.displayName} ({project.projectId})</td>
+                      <td style={tdStyle}>{bucket.location}</td>
+                      <td style={tdStyle}>{bucket.storageClass}</td>
                       <td style={tdStyle}>
-                        <button onClick={() => handleDeleteAzure(acc)} title="Usuń">🗑️</button>
                         <button
                           onClick={() => {
-                            sessionStorage.setItem("selectedStorageAccount", JSON.stringify(acc));
-                            navigate(`/storage/${acc.name}`, { state: acc });
+                            sessionStorage.setItem("selectedGCPBucket", JSON.stringify(resourceInfo));
+                            navigate(`/storage/gcp/${bucket.name}`, { state: resourceInfo });
                           }}
-                          title="Szczegóły" style={{ marginLeft: "5px" }}>
+                          title="Pokaż pliki"
+                        >
                           📂
                         </button>
+                        <button onClick={() => handleDeleteGCP(resourceInfo)} title="Usuń" style={{ marginLeft: "5px" }}>🗑️</button>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-          <CreateBucketGCPModal
-            isOpen={showGCPModal}
-            onClose={() => setShowGCPModal(false)}
-            onCreated={fetchAllStorageResources}
-          />
-          {/* SEKCJA DLA GCP */}
-          <div style={{ marginTop: '40px' }}>
-            <h2>
-              Google Cloud Storage Buckets
-            </h2>
-            <button onClick={() => setShowGCPModal(true)} style={buttonStyle}>
-              ➕ Utwórz Bucket (GCP)
-            </button>
-            {gcpProjects.length === 0 ? (
-              <p>Brak dostępnych bucketów w GCP.</p>
-            ) : (
-              <table style={tableStyle}>
-                <thead>
-                  <tr style={{ backgroundColor: "#f5f5f5" }}>
-                    <th style={thStyle}>Nazwa Bucketa</th>
-                    <th style={thStyle}>Projekt</th>
-                    <th style={thStyle}>Lokalizacja</th>
-                    <th style={thStyle}>Klasa Storage</th>
-                    <th style={thStyle}>Akcje</th>
-
-                  </tr>
-                </thead>
-                <tbody>
-                  {gcpProjects.flatMap(project =>
-                    project.buckets.map(bucket => (
-                      <tr key={`${project.projectId}-${bucket.name}`}>
-                        <td style={tdStyle}>{bucket.name}</td>
-                        <td style={tdStyle}>{project.displayName} ({project.projectId})</td>
-                        <td style={tdStyle}>{bucket.location}</td>
-                        <td style={tdStyle}>{bucket.storageClass}</td>                        
-                            <button
-                          onClick={() => {
-                            sessionStorage.setItem("selectedBucket", JSON.stringify(bucket));
-                            navigate(`/storage/gcp/${bucket.name}`, { state: bucket });
-                          }}
-                          title="Szczegóły" style={{ marginLeft: "5px" }}>
-                          📂
-                        </button>
-
-                        <button onClick={() => handleDeleteGCP(bucket)} title="Usuń">🗑️</button>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </>
-      )}
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
 };

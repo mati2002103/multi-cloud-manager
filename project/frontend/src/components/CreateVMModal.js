@@ -13,7 +13,7 @@ const CreateVMModal = ({ isOpen, onClose, onCreated, subscriptionId }) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("/api/create_vm", {
+      const res = await fetch("/api/vmsCreate", {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -26,8 +26,8 @@ const CreateVMModal = ({ isOpen, onClose, onCreated, subscriptionId }) => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd tworzenia VM");
-      onCreated(); // odświeżenie listy VM
-      onClose();   // zamknięcie modala
+      onCreated();
+      onClose();   
     } catch (err) {
       setError(err.message);
     } finally {

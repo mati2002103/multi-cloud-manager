@@ -10,9 +10,8 @@ import Networks from "./pages/Networks";
 import VMMonitor from "./pages/VmMonitor";
 import StorageBlobContainers from "./pages/StorageBlobContainers";
 import Storage from "./pages/Storage";
-import GCPBucketContents from './pages/GCPBucketContents';
-
-import Home from "./pages/Home"; // 🔥 Landing Page
+import GCPBucketContents from "./pages/GCPBucketContents";
+import Home from "./pages/Home";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -33,17 +32,17 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Landing Page bez Sidebara */}
+        {/* Landing Page bez sidebara */}
         <Route path="/" element={<Home user={user} />} />
 
-        {/* Chronione trasy z Sidebar */}
         {user.logged_in ? (
+          // Dla chronionych tras renderujemy layout z sidebar i main
           <Route
             path="/*"
             element={
-              <div style={{ display: "flex" }}>
-                <Sidebar onLogout={handleLogout} />
-                <div style={{ flex: 1, backgroundColor: "#f7fafc" }}>
+                <div style={{ display: "flex", minHeight: "100vh" }}>
+                  <Sidebar onLogout={handleLogout} />
+                <main className="app-main">
                   <Routes>
                     <Route path="/dashboard" element={<Dashboard />} />
                     <Route path="/virtual-machines" element={<VirtualMachines />} />
@@ -52,12 +51,12 @@ function App() {
                     <Route path="/subscriptions" element={<Subscriptions />} />
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
-                    <Route path="/Storage" element={<Storage />} />
+                    <Route path="/storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />
                     <Route path="/storage/gcp/:bucketName" element={<GCPBucketContents />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>
-                </div>
+                </main>
               </div>
             }
           />

@@ -14,9 +14,7 @@ const GCPBucketContents = () => {
   useEffect(() => {
     if (!bucketInfo) {
       const stored = sessionStorage.getItem("selectedGCPBucket");
-      if (stored) {
-        setBucketInfo(JSON.parse(stored));
-      }
+      if (stored) setBucketInfo(JSON.parse(stored));
     }
   }, []);
 
@@ -25,10 +23,7 @@ const GCPBucketContents = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(
-        `/api/projects/<bucket_name>/list_bucket_blobs?projectId=${bucketInfo.projectId}&bucketName=${bucketName}`,
-        { credentials: "include" }
-      );
+      const res = await fetch(`/api/gcp/buckets/blobs?projectId=${bucketInfo.projectId}&bucketName=${bucketName}`, { credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd pobierania plików");
       setBlobs(data.value || []);
@@ -38,12 +33,78 @@ const GCPBucketContents = () => {
       setLoading(false);
     }
   };
-  
+
   useEffect(() => {
-    if (bucketInfo) {
-      fetchBlobs();
-    }
+    if (bucketInfo) fetchBlobs();
   }, [bucketInfo]);
+
+  const handleUpload = async (event) => {
+    event.preventDefault();
+    const file = event.target.file.files[0];
+    if (!file) return;
+
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("bucketName", bucketName);
+    formData.append("projectId", bucketInfo.projectId);
+
+    try {
+      const res = await fetch(`/api/gcp/buckets/blobs`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd wysyłania pliku");
+      alert(`✅ ${data.message}`);
+      fetchBlobs();
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  };
+
+  const handleDownload = async (blobName) => {
+    try {
+      const res = await fetch(`/api/gcp/buckets/blobs/download?projectId=${bucketInfo.projectId}&bucketName=${bucketName}&blobName=${blobName}`, { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Błąd pobierania pliku");
+      }
+      const blobData = await res.blob();
+      const url = window.URL.createObjectURL(blobData);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = blobName;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  };
+
+  const handleDelete = async (blobName) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć plik "${blobName}"?`)) return;
+    try {
+      const res = await fetch(`/api/gcp/buckets/blobs`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucketName: bucketName,
+          projectId: bucketInfo.projectId,
+          blobName: blobName
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania pliku");
+      alert(`✅ ${data.message}`);
+      fetchBlobs();
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  };
 
   if (!bucketInfo) {
     return (
@@ -63,6 +124,11 @@ const GCPBucketContents = () => {
       <button onClick={() => navigate(-1)} style={btn}>⬅️ Wróć</button>
       <button onClick={fetchBlobs} style={btn}>🔄 Odśwież</button>
 
+      <form onSubmit={handleUpload} style={{ margin: "20px 0", padding: "10px", border: "1px dashed #ccc", borderRadius: "8px" }}>
+        <input type="file" name="file" required />
+        <button type="submit" style={{ ...btn, marginBottom: 0 }}>📤 Wyślij plik</button>
+      </form>
+
       {error && <p style={{ color: "red" }}>❌ {error}</p>}
       
       {loading ? (
@@ -79,11 +145,7 @@ const GCPBucketContents = () => {
           </thead>
           <tbody>
             {blobs.length === 0 ? (
-              <tr>
-                <td colSpan="4" style={{ textAlign: "center", padding: "20px" }}>
-                  Ten bucket jest pusty.
-                </td>
-              </tr>
+              <tr><td colSpan="4" style={{ textAlign: "center", padding: "20px" }}>Ten bucket jest pusty.</td></tr>
             ) : (
               blobs.map((blob, i) => (
                 <tr key={i}>
@@ -91,8 +153,8 @@ const GCPBucketContents = () => {
                   <td style={tdStyle}>{(blob.size / 1024).toFixed(2)} KB</td>
                   <td style={tdStyle}>{blob.updated ? new Date(blob.updated).toLocaleString() : '—'}</td>
                   <td style={tdStyle}>
-                    <button disabled title="Wkrótce">⬇️</button>
-                    <button disabled title="Wkrótce" style={{ marginLeft: "5px" }}>🗑️</button>
+                    <button onClick={() => handleDownload(blob.name)} title="Pobierz">⬇️</button>
+                    <button onClick={() => handleDelete(blob.name)} title="Usuń" style={{ marginLeft: "5px" }}>🗑️</button>
                   </td>
                 </tr>
               ))

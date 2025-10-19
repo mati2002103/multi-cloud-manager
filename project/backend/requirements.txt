@@ -25,6 +25,7 @@ google-api-python-client
 google-cloud-storage
 google-cloud-resource-manager
 google-auth[requests]
-
+google-cloud-compute
+google-cloud-run
 
 six
