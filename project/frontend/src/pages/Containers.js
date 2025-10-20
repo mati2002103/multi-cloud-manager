@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import CreateContainerModal from "../components/CreateContainerModal";
+import CreateGCPContainerModal from "../components/CreateGCPContainerModal"; 
 
 const Containers = () => {
   const [azureContainers, setAzureContainers] = useState([]);
@@ -10,6 +11,7 @@ const Containers = () => {
   const [gcpServices, setGcpServices] = useState([]);
   const [gcpLoading, setGcpLoading] = useState(true);
   const [gcpError, setGcpError] = useState(null);
+  const [showGCPModal, setShowGCPModal] = useState(false); 
 
   const fetchAzureContainers = async () => {
     setAzureLoading(true);
@@ -48,9 +50,9 @@ const Containers = () => {
       setGcpLoading(false);
     }
   };
+
   const handleDeleteGCP = async (service) => {
     if (!window.confirm(`Czy na pewno chcesz usunąć usługę Cloud Run "${service.name}" w regionie "${service.region}"?`)) return;
-
     try {
       const res = await fetch("/api/gcp/delete_container", {
         method: "DELETE",
@@ -59,16 +61,13 @@ const Containers = () => {
         body: JSON.stringify({
           projectId: service.projectId,
           region: service.region,
-          serviceName: service.name 
+          serviceName: service.name
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd usuwania usługi Cloud Run");
-
       alert(`✅ ${data.message}`);
-      setTimeout(() => {
-        fetchGcpContainers();
-      }, 3000);
+      setTimeout(() => { fetchGcpContainers(); }, 3000);
     } catch (err) {
       alert(`❌ ${err.message}`);
     }
@@ -168,9 +167,16 @@ const Containers = () => {
 
       <div>
         <h2>Google Cloud Run Services</h2>
-        <button onClick={() => alert('Tworzenie usług Cloud Run wkrótce!')} style={buttonStyle} disabled>
+       
+        <button onClick={() => setShowGCPModal(true)} style={buttonStyle}>
           ➕ Utwórz usługę (GCP)
         </button>
+       
+        <CreateGCPContainerModal
+          isOpen={showGCPModal}
+          onClose={() => setShowGCPModal(false)}
+          onCreated={fetchGcpContainers}
+        />
         {gcpLoading ? (
           <p>⏳ Ładowanie danych z GCP...</p>
         ) : gcpError ? (
@@ -196,7 +202,7 @@ const Containers = () => {
                   <td style={cellStyle}><a href={service.url} target="_blank" rel="noopener noreferrer">{service.url}</a></td>
                   <td style={cellStyle}>{service.created ? new Date(service.created).toLocaleString() : '—'}</td>
                   <td style={cellStyle}>
-                    <button onClick={() => handleDeleteGCP(service)}>🗑️</button>
+                    <button onClick={() => handleDeleteGCP(service)} title="Usuń usługę">🗑️</button>
                   </td>
                 </tr>
               ))}
