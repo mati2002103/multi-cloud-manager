@@ -6,6 +6,7 @@ from .storage import (list_gcp_buckets,delete_gcp_bucket,create_gcp_bucket,
 
 from .vm import list_gcp_vms,delete_gcp_vm,create_gcp_vm
 from .containers import list_gcp_containers,delete_gcp_container,create_gcp_container
+from .vpcs import list_gcp_vpcs,create_gcp_vpc,create_gcp_subnet
 
 gcp_api = Blueprint("gcp_api", __name__)
 
@@ -34,3 +35,10 @@ gcp_api.route("/api/gcp/create_gcp_vms", methods=["POST"])(create_gcp_vm)
 gcp_api.route("/api/gcp/list_containers", methods=["GET"])(list_gcp_containers)
 gcp_api.route("/api/gcp/delete_container", methods=["DELETE"])(delete_gcp_container)
 gcp_api.route("/api/gcp/create_container", methods=["POST"])(create_gcp_container)
+
+#vpcs
+gcp_api.route("/api/gcp/list_gcp_vpcs", methods=["GET"])(list_gcp_vpcs)
+gcp_api.route("/api/gcp/create_gcp_vpc", methods=["POST"])(create_gcp_vpc)
+
+#subnet
+gcp_api.route("/api/gcp/create_gcp_subnet", methods=["POST"])(create_gcp_subnet)

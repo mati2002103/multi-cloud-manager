@@ -6,7 +6,7 @@ from .subnet import subnet_create
 from .vmmonitor import vm_az_monitor_metrics,agent_status,ensure_ama
 from .vm import list_virtual_machines, create_vm,delete_vm
 from .containers import list_containers,create_container,delete_container,restart_container
-from .log_analytics import create_log_analytics,list_log_analytics,list_dcr,create_dcr,logs_basic
+from .log_analytics import create_log_analytics,list_log_analytics,list_dcr,create_dcr_and_associate_vm,logs_basic
 from .storage import (
     list_storage_accounts,create_storage_account,delete_storage_account,
     list_blob_containers,create_blob_container,delete_blob_container,
@@ -64,8 +64,8 @@ azure_bp_module.route("/api/log_analytics", methods=["POST"])(create_log_analyti
 azure_bp_module.route("/api/log_analytics", methods=["GET"])(list_log_analytics)
 
 #dcr
-azure_bp_module.route("/api/dcr_list", methods=["GET"])(list_dcr)
-azure_bp_module.route("/api/dcr_create", methods=["POST"])(create_dcr)
+azure_bp_module.route("/api/<vm_id>/dcr_list", methods=["GET"])(list_dcr)
+azure_bp_module.route("/api/create_dcr_and_associate_for_vm", methods=["POST"])(create_dcr_and_associate_vm)
 azure_bp_module.route("/api/logs_basic", methods=["GET"])(logs_basic)
 
 #containers
