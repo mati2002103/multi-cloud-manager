@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import CreateDCRAssociationModal from "../components/CreateDCRAssociationModal"; // Zaimportuj modal DCR
+import CreateDCRAssociationModal from "../components/CreateDCRAssociationModal";
 
 const VMMonitor = () => {
   const { vmId } = useParams();
@@ -18,8 +18,6 @@ const VMMonitor = () => {
   const [dcrList, setDcrList] = useState([]);
   const [dcrLoading, setDcrLoading] = useState(false);
   const [dcrError, setDcrError] = useState(null);
-  const [logRows, setLogRows] = useState([]);
-  const [logType, setLogType] = useState("heartbeat");
 
   const [workspaces, setWorkspaces] = useState([]);
   const [wsLoading, setWsLoading] = useState(false);
@@ -31,8 +29,8 @@ const VMMonitor = () => {
     subscriptionId: "", rgName: "", workspaceName: "",
     location: "westeurope", sku: "PerGB2018", retentionInDays: 30,
   });
-  const [showCreateDCRModal, setShowCreateDCRModal] = useState(false); // Stan dla modala DCR
-  const [dcrCreating, setDcrCreating] = useState(false); // Zmieniono nazwę dla jasności
+  const [showCreateDCRModal, setShowCreateDCRModal] = useState(false);
+  const [dcrCreating, setDcrCreating] = useState(false);
   const [dcrMessage, setDcrMessage] = useState(null);
 
   const fetchDcrList = async (currentWorkspaceId) => {
@@ -91,9 +89,11 @@ const VMMonitor = () => {
   }, [vmId]);
 
   useEffect(() => {
-    if (vmInfo?.subscriptionId && vmInfo?.resourceGroup) {
-      fetchWorkspaces(vmInfo.subscriptionId, vmInfo.resourceGroup);
-      setCreateWsForm((f) => ({ ...f, subscriptionId: vmInfo.subscriptionId, rgName: vmInfo.resourceGroup }));
+    if (vmInfo?.subscriptionId) {
+      fetchWorkspaces(vmInfo.subscriptionId);
+       if (vmInfo?.resourceGroup) {
+         setCreateWsForm((f) => ({ ...f, subscriptionId: vmInfo.subscriptionId, rgName: vmInfo.resourceGroup }));
+       }
     }
   }, [vmInfo?.subscriptionId, vmInfo?.resourceGroup]);
 
@@ -105,12 +105,12 @@ const VMMonitor = () => {
     }
   }, [vmId, selectedWorkspaceId]);
 
-  const fetchWorkspaces = async (subscriptionId, rgName) => {
+  const fetchWorkspaces = async (subscriptionId) => {
     setWsLoading(true);
     setWsError(null);
     try {
       const res = await fetch(
-        `/api/log_analytics?subscriptionId=${subscriptionId}`, // Pobierz wszystkie z subskrypcji
+        `/api/log_analytics?subscriptionId=${subscriptionId}`,
         { credentials: "include" }
       );
       const data = await res.json();
@@ -145,7 +145,7 @@ const VMMonitor = () => {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd tworzenia workspace");
-      await fetchWorkspaces(createWsForm.subscriptionId, createWsForm.rgName);
+      await fetchWorkspaces(createWsForm.subscriptionId);
       if (data.workspace?.id) setSelectedWorkspaceId(data.workspace.id);
       setShowCreateWs(false);
       alert(data.message || "Workspace utworzony");
@@ -153,22 +153,6 @@ const VMMonitor = () => {
       alert("❌ " + err.message);
     } finally {
       setCreatingWs(false);
-    }
-  };
-
-  const fetchLogsBasic = async () => {
-    if (!selectedWorkspaceId) { alert("Wybierz Workspace, aby pobrać logi."); return; }
-    setLogRows([]);
-    try {
-      const res = await fetch(
-        `/api/logs_basic?workspaceId=${encodeURIComponent(selectedWorkspaceId)}&queryType=${logType}`,
-        { method: "GET", credentials: "include" }
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Błąd pobierania logów");
-      setLogRows(data.value || []);
-    } catch (err) {
-      alert("❌ " + err.message);
     }
   };
 
@@ -184,16 +168,41 @@ const VMMonitor = () => {
     }
   };
 
+  const handleExportLogs = (type) => {
+    if (!selectedWorkspaceId) {
+      alert("Wybierz Log Analytics Workspace.");
+      return;
+    }
+    if (!vmId) {
+      alert("Brakuje ID maszyny wirtualnej.");
+      return;
+    }
+
+    const downloadUrl = `/api/vm/${vmId}/logs/export?type=${type}&workspaceId=${encodeURIComponent(selectedWorkspaceId)}`;
+
+    // ZMIANA: Zamiast window.location.href, użyj tej metody
+    console.log("Attempting to download from:", downloadUrl); // Ten log powinien być teraz widoczny
+
+    // Utwórz niewidzialny link
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    // Opcjonalnie: Ustaw sugerowaną nazwę pliku
+    link.setAttribute('download', `${vmId}_${type}_logs.csv`);
+    // Dodaj link do dokumentu (wymagane w niektórych przeglądarkach)
+    document.body.appendChild(link);
+    // Symuluj kliknięcie
+    link.click();
+    // Usuń link
+    document.body.removeChild(link);
+  };
+
   const renderChart = (metric) => (
     <div key={metric.name} style={{ marginBottom: "40px" }}>
       <h3>{metric.name} ({metric.unit})</h3>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={metric.data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="timestamp" />
-          <YAxis />
-          <Tooltip />
-          <Legend />
+          <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="timestamp" /><YAxis />
+          <Tooltip /><Legend />
           <Line type="monotone" dataKey="average" stroke="#0078D4" dot={false} />
         </LineChart>
       </ResponsiveContainer>
@@ -201,7 +210,7 @@ const VMMonitor = () => {
   );
 
   const selectedMetricData = vmInfo?.metrics?.find((m) => m.name === selectedMetric);
-  console.log("Sprawdzenie vmInfo dla przycisku DCR:", vmInfo);
+
   return (
     <div style={{ padding: "20px", maxWidth: "980px", margin: "0 auto" }}>
       <button onClick={() => navigate("/virtual-machines")} style={btnStyle}>
@@ -289,33 +298,16 @@ const VMMonitor = () => {
                  <button onClick={() => fetchDcrList(selectedWorkspaceId)} style={refreshDcrButtonStyle} disabled={!selectedWorkspaceId || dcrLoading}>
                   🔄 Odśwież listę DCR
                 </button>
-                <button
-                onClick={() => setShowCreateDCRModal(true)}
-                disabled={
-                  dcrCreating || 
-                  !selectedWorkspaceId || 
-                  !vmInfo?.subscriptionId || 
-                  !vmInfo?.resourceGroup ||
-                  !vmInfo?.resourceId ||
-                  !vmInfo?.location 
-                }
-                style={createDcrButtonStyle}
-              >
-                {dcrCreating ? "Tworzenie..." : "➕ Utwórz i przypisz DCR do tej VM"}
-              </button>
-
-              <CreateDCRAssociationModal
-                isOpen={showCreateDCRModal}
-                onClose={() => setShowCreateDCRModal(false)}
-                onCreated={() => fetchDcrList(selectedWorkspaceId)}
-                vmInfo={{
-                  vmName: vmId,
-                  subscriptionId: vmInfo?.subscriptionId,
-                  resourceGroup: vmInfo?.resourceGroup,
-                  resourceId: vmInfo?.resourceId,
-                  location: vmInfo?.location
-                }}
-              />
+                 <button onClick={() => setShowCreateDCRModal(true)} disabled={!selectedWorkspaceId || !vmInfo?.resourceId || !vmInfo?.location} style={createDcrButtonStyle}>
+                  ➕ Utwórz i przypisz DCR do tej VM
+                </button>
+                <CreateDCRAssociationModal
+                  isOpen={showCreateDCRModal}
+                  onClose={() => setShowCreateDCRModal(false)}
+                  onCreated={() => fetchDcrList(selectedWorkspaceId)}
+                  vmInfo={{ vmName: vmId, subscriptionId: vmInfo?.subscriptionId, resourceGroup: vmInfo?.resourceGroup,
+                    resourceId: vmInfo?.resourceId, location: vmInfo?.location }}
+                />
                 {dcrMessage && <p style={{ color: dcrError ? "red" : "#2D3748", marginTop: '5px' }}>{dcrMessage}</p>}
 
                 {dcrLoading ? ( <p>⏳ Ładowanie DCR...</p> )
@@ -338,27 +330,15 @@ const VMMonitor = () => {
               <div style={{ marginTop: "30px" }}>
                 <h4>📄 Pobierz logi z workspace: {workspaces.find(ws => ws.id === selectedWorkspaceId)?.name || 'N/A'}</h4>
                 <div style={logQueryStyle}>
-                  <label>Typ zapytania:</label>
-                  <select value={logType} onChange={(e) => setLogType(e.target.value)} style={logSelectStyle}>
-                    <option value="heartbeat">Heartbeat</option>
-                    <option value="perf">Perf (CPU)</option>
-                  </select>
-                  <button onClick={fetchLogsBasic} disabled={!selectedWorkspaceId} style={fetchLogButtonStyle}>
-                    🔍 Pobierz logi
+                  <label>Wybierz typ logów do eksportu:</label>
+                  <button onClick={() => handleExportLogs('perf')} disabled={!selectedWorkspaceId} style={exportButtonStyle}>
+                    Pobierz Perf (CSV)
                   </button>
+                  <button onClick={() => handleExportLogs('heartbeat')} disabled={!selectedWorkspaceId} style={exportButtonStyle}>
+                    Pobierz Heartbeat (CSV)
+                  </button>
+                  
                 </div>
-                {logRows.length > 0 ? (
-                  <table style={logTableStyle}>
-                    <thead>
-                      <tr>{Object.keys(logRows[0]).map((key) => ( <th key={key} style={logThStyle}>{key}</th> ))}</tr>
-                    </thead>
-                    <tbody>
-                      {logRows.map((row, idx) => ( <tr key={idx}>
-                        {Object.values(row).map((val, i) => ( <td key={i} style={logTdStyle}>{String(val)}</td> ))}
-                      </tr> ))}
-                    </tbody>
-                  </table>
-                ) : ( <p>Brak danych do wyświetlenia.</p> )}
               </div>
             </div>
           )}
@@ -381,12 +361,8 @@ const wsSelectStyle = { padding: "6px", borderRadius: "4px" };
 const createWsButtonStyle = { marginLeft: "8px", padding: "6px 10px", background: "#6B46C1", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
 const createDcrButtonStyle = { marginLeft: "12px", padding: "6px 10px", background: "#2D3748", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
 const refreshDcrButtonStyle = { marginTop: "10px", padding: "6px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginRight: '10px'};
-const logQueryStyle = { display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px"};
-const logSelectStyle = { padding: "6px", borderRadius: "4px" };
-const fetchLogButtonStyle = { padding: "6px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "4px", cursor: "pointer"};
-const logTableStyle = { borderCollapse: "collapse", width: "100%" };
-const logThStyle = { border: "1px solid #ccc", padding: "6px", background: "#eee"};
-const logTdStyle = { border: "1px solid #ccc", padding: "6px"};
+const logQueryStyle = { display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px", flexWrap: 'wrap'};
+const exportButtonStyle = { padding: "6px 12px", background: "#38A169", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginLeft: "5px"};
 const createWsFormStyle = { marginTop: "12px", padding: "12px", border: "1px solid #eee", borderRadius: "8px"};
 const createWsGridStyle = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px"};
 const createWsInputStyle = { width: "100%", padding: "8px", marginTop: "6px", borderRadius: "4px"};

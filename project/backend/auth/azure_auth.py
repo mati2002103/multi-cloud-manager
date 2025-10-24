@@ -24,7 +24,8 @@ def get_user():
 @azure_auth.route("/api/login/azure")
 def login():
     url = build_msal_app().get_authorization_request_url(
-        SCOPE, redirect_uri=f"{APP_BASE_URL}{REDIRECT_PATH}"
+        scopes=SCOPE, 
+        redirect_uri=f"{APP_BASE_URL}{REDIRECT_PATH}",
     )
     return redirect(url)
 

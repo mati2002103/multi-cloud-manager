@@ -1,4 +1,4 @@
-from flask import jsonify, request, session
+from flask import jsonify, request, session, Response
 from .utils import FlaskCredential
 from .vm import find_vm_by_name
 
@@ -17,8 +17,8 @@ from azure.mgmt.monitor.models import (
 )
 from azure.monitor.query import LogsQueryClient,LogsQueryStatus
 from datetime import timedelta
-
-
+import csv
+import io
 
 
 def list_log_analytics():
@@ -290,38 +290,66 @@ def create_dcr_and_associate_vm():
     except Exception as e:
         return jsonify({"error": f"Wystąpił nieoczekiwany błąd: {str(e)}"}), 500
     
-def logs_basic():
-    from azure.identity import DefaultAzureCredential
-    workspace_id = request.args.get("workspaceId")
-    query_type = request.args.get("queryType", "heartbeat")
+    
+def export_vm_logs_csv(vm_id):
+    log_type = request.args.get("type", "heartbeat").lower()
+    # ZMIANA: Oczekujemy GUID, a nie pełnego ID
+    workspace_guid = request.args.get("workspaceGuid") 
+    timespan_hours = int(request.args.get("hours", 1))
 
-    if not workspace_id:
-        return jsonify({"error": "Brak workspaceId"}), 400
+    if log_type not in ["perf", "heartbeat"]:
+        return jsonify({"error": "Nieprawidłowy typ logu."}), 400
+    if not workspace_guid:
+        return jsonify({"error": "Wymagany 'workspaceGuid'."}), 400
 
     try:
-        credential = DefaultAzureCredential()
+        credential = FlaskCredential() # Teraz ta klasa jest inteligentna
         client = LogsQueryClient(credential)
+    except Exception as e:
+        return jsonify({"error": f"Błąd uwierzytelniania: {str(e)}"}), 500
 
-        if query_type == "heartbeat":
-            query = "Heartbeat | top 10 by TimeGenerated desc"
-        elif query_type == "perf":
-            query = "Perf | where ObjectName == 'Processor' | top 10 by TimeGenerated desc"
-        else:
-            return jsonify({"error": "Nieznany queryType"}), 400
+    try:
+        if log_type == "perf":
+            query = f"Perf | where Computer == '{vm_id}' and (CounterName == '% Processor Time' or CounterName == 'Available MBytes Memory') | top 500 by TimeGenerated desc"
+        else: 
+            query = f"Heartbeat | where Computer == '{vm_id}' | top 500 by TimeGenerated desc"
 
-        result = client.query_workspace(
-            workspace_id,
-            query,
-            timespan=timedelta(hours=1)
+        print(f"Executing KQL Query: {query}")
+        
+        response = client.query_workspace(
+            workspace_id=workspace_guid, # Używamy GUID
+            query=query,
+            timespan=timedelta(hours=timespan_hours)
         )
 
-        rows = []
-        if result.status == LogsQueryStatus.SUCCESS and result.tables:
-            table = result.tables[0]
+        if response.status == LogsQueryStatus.SUCCESS and response.tables:
+            table = response.tables[0]
+            if not table.rows:
+                return jsonify({"message": "Nie znaleziono danych."}), 200
+
+            output = io.StringIO()
+            writer = csv.writer(output)
+
+            header = table.columns # POPRAWKA: Użyj listy bezpośrednio
+            writer.writerow(header)
+
             for row in table.rows:
-                rows.append(dict(zip([col.name for col in table.columns], row)))
+                writer.writerow(list(row)) # Konwertuj wiersz na listę
 
-        return jsonify({"value": rows}), 200
+            csv_content = output.getvalue()
+            output.close()
 
+            return Response(
+                csv_content,
+                mimetype="text/csv",
+                headers={"Content-Disposition": f"attachment;filename={vm_id}_{log_type}_logs.csv"}
+            )
+        elif response.status == LogsQueryStatus.PARTIAL:
+             return jsonify({"error": "Zapytanie wykonano częściowo.", "details": response.partial_error}), 500
+        else:
+             return jsonify({"error": "Nie udało się wykonać zapytania KQL.", "details": response.partial_error}), 500
+
+    except HttpResponseError as e:
+       return jsonify({"error": f"Azure API error during query: {str(e)}"}), e.status_code or 500
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+       return jsonify({"error": f"An unexpected error occurred during log export: {str(e)}"}), 500

@@ -10,23 +10,29 @@ const CreateDCRAssociationModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
   const [collectSystemLogs, setCollectSystemLogs] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [selectedLocation, setSelectedLocation] = useState("");
 
   useEffect(() => {
     if (!isOpen || !vmInfo?.subscriptionId || !vmInfo?.resourceGroup) {
       setWorkspaces([]);
+      setSelectedWorkspaceId("");
+      setSelectedLocation(""); 
       return;
     }
     setError(null);
     setWsLoading(true);
     setWsError(null);
-    fetch(`/api/log_analytics?subscriptionId=${vmInfo.subscriptionId}&rgName=${vmInfo.resourceGroup}`, { credentials: "include" })
+    fetch(`/api/log_analytics?subscriptionId=${vmInfo.subscriptionId}`, { credentials: "include" }) 
       .then(res => res.ok ? res.json() : res.json().then(err => { throw new Error(err.error) }))
       .then(data => {
-        setWorkspaces(data.value || []);
-        if (data.value && data.value.length > 0) {
-          setSelectedWorkspaceId(data.value[0].id);
+        const fetchedWorkspaces = data.value || [];
+        setWorkspaces(fetchedWorkspaces);
+        if (fetchedWorkspaces.length > 0) {
+          setSelectedWorkspaceId(fetchedWorkspaces[0].id);
+          setSelectedLocation(fetchedWorkspaces[0].location);
         } else {
            setSelectedWorkspaceId("");
+           setSelectedLocation("");
         }
       })
       .catch(err => setWsError(`Nie udało się pobrać workspace'ów: ${err.message}`))
@@ -35,28 +41,27 @@ const CreateDCRAssociationModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
     setDcrName(`dcr-${vmInfo.vmName || 'vm'}-basic`);
   }, [isOpen, vmInfo]);
 
+  const handleWorkspaceChange = (event) => {
+    const newWorkspaceId = event.target.value;
+    setSelectedWorkspaceId(newWorkspaceId);
+    const selectedWs = workspaces.find(ws => ws.id === newWorkspaceId);
+    setSelectedLocation(selectedWs ? selectedWs.location : "");
+  };
 
   const handleSubmit = async () => {
-    if (!vmInfo?.subscriptionId || !vmInfo?.resourceGroup || !vmInfo?.resourceId || !vmInfo?.location) {
-        setError("Brakujące podstawowe informacje o VM (Subskrypcja, RG, ID, Lokalizacja).");
+    
+    if (!vmInfo?.subscriptionId || !vmInfo?.resourceGroup || !vmInfo?.resourceId) {
+        setError("Brakujące podstawowe informacje o VM (Subskrypcja, RG, ID).");
         return;
     }
-     if (!selectedWorkspaceId) {
-        setError("Musisz wybrać Log Analytics Workspace.");
+    
+     if (!selectedWorkspaceId || !selectedLocation) {
+        setError("Musisz wybrać Log Analytics Workspace (i jego lokalizacja musi być znana).");
         return;
      }
-     if (!dcrName) {
-         setError("Musisz podać nazwę dla nowej reguły DCR.");
-         return;
-     }
-     if (!/^[a-zA-Z0-9_.-]+$/.test(dcrName)) {
-        setError("Nazwa DCR może zawierać litery, cyfry, podkreślenia, kropki i myślniki.");
-        return;
-     }
-     if (!collectPerformance && !collectSystemLogs) {
-         setError("Musisz wybrać co najmniej jedno źródło danych do zbierania.");
-         return;
-     }
+     if (!dcrName)
+     if (!/^[a-zA-Z0-9_.-]+$/.test(dcrName)) 
+     if (!collectPerformance && !collectSystemLogs) 
 
     setLoading(true);
     setError(null);
@@ -65,14 +70,14 @@ const CreateDCRAssociationModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
         subscriptionId: vmInfo.subscriptionId,
         resourceGroup: vmInfo.resourceGroup,
         dcrName: dcrName,
-        location: vmInfo.location,
+        location: selectedLocation, 
         workspaceId: selectedWorkspaceId,
         vmResourceId: vmInfo.resourceId,
         collectPerformance: collectPerformance,
         collectSystemLogs: collectSystemLogs,
       };
 
-      const res = await fetch("/api/create_dcr_and_associate_for_vm", {
+      const res = await fetch("/api/create_dcr_and_associate_for_vm", { 
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -117,32 +122,33 @@ const CreateDCRAssociationModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
         {wsLoading ? ( <p>Ładowanie...</p> )
          : wsError ? ( <p style={styles.errorText}>❌ {wsError}</p> )
          : (
-            <select value={selectedWorkspaceId} onChange={e => setSelectedWorkspaceId(e.target.value)} style={styles.input}>
+            <select value={selectedWorkspaceId} onChange={handleWorkspaceChange} style={styles.input}>
               <option value="">-- wybierz Log Analytics Workspace --</option>
               {workspaces.map(ws => (
                 <option key={ws.id} value={ws.id}>
-                  {ws.name} ({ws.location})
+                  {ws.name} ({ws.location}) 
                 </option>
               ))}
             </select>
           )}
+        
+        <label>Lokalizacja DCR (musi pasować do Workspace):</label>
+        <input
+            type="text"
+            value={selectedLocation}
+            readOnly 
+            style={{...styles.input, backgroundColor: '#eee'}} 
+        />
+
 
         <label>Zbierane dane:</label>
         <div style={{ marginBottom: '15px' }}>
             <label style={{ marginRight: '15px', fontWeight: 'normal' }}>
-                <input
-                    type="checkbox"
-                    checked={collectPerformance}
-                    onChange={e => setCollectPerformance(e.target.checked)}
-                />
+                <input type="checkbox" checked={collectPerformance} onChange={e => setCollectPerformance(e.target.checked)}/>
                 Liczniki wydajności (CPU, Pamięć)
             </label>
             <label style={{ fontWeight: 'normal' }}>
-                <input
-                    type="checkbox"
-                    checked={collectSystemLogs}
-                    onChange={e => setCollectSystemLogs(e.target.checked)}
-                />
+                <input type="checkbox" checked={collectSystemLogs} onChange={e => setCollectSystemLogs(e.target.checked)} />
                 Logi systemowe (Event Log / Syslog)
             </label>
         </div>
@@ -150,7 +156,7 @@ const CreateDCRAssociationModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
         {error && <p style={styles.errorText}>❌ {error}</p>}
 
         <div style={styles.buttonContainer}>
-          <button onClick={handleSubmit} disabled={loading || wsLoading || !selectedWorkspaceId || !dcrName}>
+          <button onClick={handleSubmit} disabled={loading || wsLoading || !selectedWorkspaceId || !dcrName || !selectedLocation}>
             {loading ? "Tworzenie..." : "Utwórz i Przypisz"}
           </button>
           <button onClick={onClose} style={{ marginLeft: "10px" }}>Anuluj</button>
