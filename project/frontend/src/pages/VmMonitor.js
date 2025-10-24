@@ -201,7 +201,7 @@ const VMMonitor = () => {
   );
 
   const selectedMetricData = vmInfo?.metrics?.find((m) => m.name === selectedMetric);
-
+  console.log("Sprawdzenie vmInfo dla przycisku DCR:", vmInfo);
   return (
     <div style={{ padding: "20px", maxWidth: "980px", margin: "0 auto" }}>
       <button onClick={() => navigate("/virtual-machines")} style={btnStyle}>
@@ -289,21 +289,33 @@ const VMMonitor = () => {
                  <button onClick={() => fetchDcrList(selectedWorkspaceId)} style={refreshDcrButtonStyle} disabled={!selectedWorkspaceId || dcrLoading}>
                   🔄 Odśwież listę DCR
                 </button>
-                 <button onClick={() => setShowCreateDCRModal(true)} disabled={!selectedWorkspaceId || !vmInfo?.resourceId} style={createDcrButtonStyle}>
-                  {dcrCreating ? "Tworzenie..." : "➕ Utwórz i przypisz DCR do tej VM"}
-                </button>
-                <CreateDCRAssociationModal
-                  isOpen={showCreateDCRModal}
-                  onClose={() => setShowCreateDCRModal(false)}
-                  onCreated={() => fetchDcrList(selectedWorkspaceId)}
-                  vmInfo={{
-                    vmName: vmId,
-                    subscriptionId: vmInfo?.subscriptionId,
-                    resourceGroup: vmInfo?.resourceGroup,
-                    resourceId: vmInfo?.resourceId,
-                    location: vmInfo?.location
-                  }}
-                />
+                <button
+                onClick={() => setShowCreateDCRModal(true)}
+                disabled={
+                  dcrCreating || 
+                  !selectedWorkspaceId || 
+                  !vmInfo?.subscriptionId || 
+                  !vmInfo?.resourceGroup ||
+                  !vmInfo?.resourceId ||
+                  !vmInfo?.location 
+                }
+                style={createDcrButtonStyle}
+              >
+                {dcrCreating ? "Tworzenie..." : "➕ Utwórz i przypisz DCR do tej VM"}
+              </button>
+
+              <CreateDCRAssociationModal
+                isOpen={showCreateDCRModal}
+                onClose={() => setShowCreateDCRModal(false)}
+                onCreated={() => fetchDcrList(selectedWorkspaceId)}
+                vmInfo={{
+                  vmName: vmId,
+                  subscriptionId: vmInfo?.subscriptionId,
+                  resourceGroup: vmInfo?.resourceGroup,
+                  resourceId: vmInfo?.resourceId,
+                  location: vmInfo?.location
+                }}
+              />
                 {dcrMessage && <p style={{ color: dcrError ? "red" : "#2D3748", marginTop: '5px' }}>{dcrMessage}</p>}
 
                 {dcrLoading ? ( <p>⏳ Ładowanie DCR...</p> )

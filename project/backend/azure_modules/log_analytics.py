@@ -202,7 +202,7 @@ def create_dcr_and_associate_vm():
             vm_rg = vm_parts[4]
             vm_name = vm_parts[8]
             vm_details = compute_client.virtual_machines.get(vm_rg, vm_name, expand='instanceView')
-            os_type = vm_details.storage_profile.os_disk.os_type.value
+            os_type = vm_details.storage_profile.os_disk.os_type
             print(f"DEBUG: Wykryto typ OS dla VM '{vm_name}': {os_type}")
         except Exception as os_check_error:
             print(f"Ostrzeżenie: Nie udało się określić typu OS dla VM {vm_resource_id}: {os_check_error}")
@@ -255,12 +255,11 @@ def create_dcr_and_associate_vm():
             destinations={"log_analytics": [LogAnalyticsDestination(name=la_destination_name, workspace_resource_id=workspace_id)]},
             data_flows=data_flows
         )
-
         print(f"Tworzenie DCR '{dcr_name}' w RG '{rg_name}'...")
-        poller_dcr = monitor_client.data_collection_rules.begin_create(
+        dcr = monitor_client.data_collection_rules.create(
             resource_group_name=rg_name, data_collection_rule_name=dcr_name, body=dcr_config
         )
-        dcr = poller_dcr.result()
+        
         print(f"DCR '{dcr.name}' utworzony (ID: {dcr.id}).")
 
         association_name = f"{vm_name}-{dcr_name}-assoc" 
