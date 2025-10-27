@@ -69,14 +69,13 @@ azure_bp_module.route("/api/create_dcr_and_associate_for_vm", methods=["POST"])(
 
 #logs
 azure_bp_module.route("/api/vm/<vm_id>/logs/export", methods=["GET"])(export_vm_logs_csv)
-#azure_bp_module.route("/api/vm/<vm_id>/logs/query",methods=["POST"])()
 
 #containers
 azure_bp_module.route("/api/list_containers", methods=["GET"])(list_containers)
 azure_bp_module.route("/api/create_container", methods=["POST"])(create_container)
 azure_bp_module.route("/api/delete_container", methods=["DELETE"])(delete_container)
 azure_bp_module.route("/api/restart_container", methods=["POST"])(restart_container)
-
+#
 # Session
 azure_bp_module.route("/api/user")(api_user)
 azure_bp_module.route("/api/subscriptions")(api_subscriptions)

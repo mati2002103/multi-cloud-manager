@@ -2,6 +2,8 @@ from flask import jsonify, request, session, Response
 from .utils import FlaskCredential
 from .vm import find_vm_by_name
 
+from azure.identity import ClientSecretCredential
+
 from azure.mgmt.loganalytics import LogAnalyticsManagementClient
 from azure.mgmt.monitor import MonitorManagementClient
 from azure.core.exceptions import ResourceNotFoundError, HttpResponseError
@@ -16,10 +18,16 @@ from azure.mgmt.monitor.models import (
     DataFlow
 )
 from azure.monitor.query import LogsQueryClient,LogsQueryStatus
-from datetime import timedelta
+from datetime import timedelta,datetime
 import csv
 import io
+import os
+import traceback
 
+
+CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
+CLIENT_SECRET = os.getenv("AZURE_CLIENT_SECRET")
+TENANT_ID = os.getenv("AZURE_TENANT_ID")
 
 def list_log_analytics():
     subscription_id = request.args.get("subscriptionId")
@@ -42,6 +50,7 @@ def list_log_analytics():
                 "name": ws.name,
                 "id": ws.id,
                 "location": ws.location,
+                "workspaceGuid": ws.customer_id,
                 "sku": sku_name,
                 "retentionInDays": retention,
                 "resourceGroup": ws.id.split('/')[4] 
@@ -292,32 +301,52 @@ def create_dcr_and_associate_vm():
     
     
 def export_vm_logs_csv(vm_id):
-    log_type = request.args.get("type", "heartbeat").lower()
-    # ZMIANA: Oczekujemy GUID, a nie pełnego ID
     workspace_guid = request.args.get("workspaceGuid") 
+    log_type = request.args.get("type", "heartbeat").lower()
     timespan_hours = int(request.args.get("hours", 1))
 
-    if log_type not in ["perf", "heartbeat"]:
-        return jsonify({"error": "Nieprawidłowy typ logu."}), 400
     if not workspace_guid:
-        return jsonify({"error": "Wymagany 'workspaceGuid'."}), 400
+         return jsonify({"error": "Wymagany jest parametr 'workspaceGuid' (sam GUID)."}), 400
 
     try:
-        credential = FlaskCredential() # Teraz ta klasa jest inteligentna
+        # Używamy poświadczeń aplikacji (Service Principal)
+        credential = ClientSecretCredential(
+            tenant_id=TENANT_ID,
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET
+        )
         client = LogsQueryClient(credential)
+        
     except Exception as e:
-        return jsonify({"error": f"Błąd uwierzytelniania: {str(e)}"}), 500
+        print(f"--- BŁĄD UWIERZYTELNIANIA --- \n{traceback.format_exc()}\n")
+        return jsonify({"error": f"Błąd uwierzytelniania aplikacji: {str(e)}"}), 500
 
     try:
+        # ZMIANA: Modyfikujemy zapytania KQL, aby były bardziej użyteczne w CSV
         if log_type == "perf":
-            query = f"Perf | where Computer == '{vm_id}' and (CounterName == '% Processor Time' or CounterName == 'Available MBytes Memory') | top 500 by TimeGenerated desc"
-        else: 
-            query = f"Heartbeat | where Computer == '{vm_id}' | top 500 by TimeGenerated desc"
+            # To zapytanie agreguje dane i usuwa duplikaty (total, cpu0)
+            query = f"""
+            Perf
+            | where Computer == '{vm_id}'
+            | where CounterName == '% Processor Time' or CounterName == 'Available MBytes Memory'
+            | where InstanceName == '_Total' or InstanceName == 'Memory' or InstanceName == 'total'
+            | summarize AverageValue = avg(CounterValue) by TimeGenerated, CounterName
+            | order by TimeGenerated desc
+            | top 500 by TimeGenerated
+            """
+        else: # heartbeat
+            # To zapytanie wybiera najważniejsze kolumny
+            query = f"""
+            Heartbeat
+            | where Computer == '{vm_id}'
+            | top 500 by TimeGenerated desc
+            | project TimeGenerated, Computer, Category, OSType, OSName, Version, ResourceId
+            """
 
-        print(f"Executing KQL Query: {query}")
+        print(f"Executing KQL Query: {query} on GUID: {workspace_guid}")
         
         response = client.query_workspace(
-            workspace_id=workspace_guid, # Używamy GUID
+            workspace_id=workspace_guid,
             query=query,
             timespan=timedelta(hours=timespan_hours)
         )
@@ -325,31 +354,33 @@ def export_vm_logs_csv(vm_id):
         if response.status == LogsQueryStatus.SUCCESS and response.tables:
             table = response.tables[0]
             if not table.rows:
-                return jsonify({"message": "Nie znaleziono danych."}), 200
-
+                return jsonify({"message": "Nie znaleziono danych."}), 200 
             output = io.StringIO()
-            writer = csv.writer(output)
+            writer = csv.writer(output,delimiter=';')
 
-            header = table.columns # POPRAWKA: Użyj listy bezpośrednio
+            header = table.columns
             writer.writerow(header)
-
+            
             for row in table.rows:
-                writer.writerow(list(row)) # Konwertuj wiersz na listę
+                row_data = [str(item) if isinstance(item, (datetime, timedelta)) else item for item in row]
+                writer.writerow(row_data)
 
             csv_content = output.getvalue()
             output.close()
-
+            print(f"{vm_id}_{log_type}_logs.csv")#
             return Response(
                 csv_content,
                 mimetype="text/csv",
                 headers={"Content-Disposition": f"attachment;filename={vm_id}_{log_type}_logs.csv"}
             )
-        elif response.status == LogsQueryStatus.PARTIAL:
-             return jsonify({"error": "Zapytanie wykonano częściowo.", "details": response.partial_error}), 500
+          
+
         else:
-             return jsonify({"error": "Nie udało się wykonać zapytania KQL.", "details": response.partial_error}), 500
+             return jsonify({"error": "Nie udało się wykonać zapytania KQL.", "details": str(response.partial_error)}), 500
 
     except HttpResponseError as e:
+       print(f"--- BŁĄD HTTP (API) --- \n{traceback.format_exc()}\n")
        return jsonify({"error": f"Azure API error during query: {str(e)}"}), e.status_code or 500
     except Exception as e:
+       print(f"--- KRYTYCZNY BŁĄD --- \n{traceback.format_exc()}\n")
        return jsonify({"error": f"An unexpected error occurred during log export: {str(e)}"}), 500

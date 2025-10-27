@@ -22,7 +22,7 @@ const VMMonitor = () => {
   const [workspaces, setWorkspaces] = useState([]);
   const [wsLoading, setWsLoading] = useState(false);
   const [wsError, setWsError] = useState(null);
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState("");
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState(""); // ZMIANA: Będzie przechowywać GUID
   const [showCreateWs, setShowCreateWs] = useState(false);
   const [creatingWs, setCreatingWs] = useState(false);
   const [createWsForm, setCreateWsForm] = useState({
@@ -34,15 +34,18 @@ const VMMonitor = () => {
   const [dcrMessage, setDcrMessage] = useState(null);
 
   const fetchDcrList = async (currentWorkspaceId) => {
-    if (!vmId || !currentWorkspaceId) {
+    // ZMIANA: currentWorkspaceId to teraz GUID. Musimy znaleźć pełne ID zasobu.
+    const currentWorkspace = workspaces.find(ws => ws.workspaceGuid === currentWorkspaceId);
+    if (!vmId || !currentWorkspace) {
         setDcrList([]);
         return;
     }
+    
     setDcrLoading(true);
     setDcrError(null);
     try {
       const res = await fetch(
-        `/api/${vmId}/dcr_list?workspaceId=${encodeURIComponent(currentWorkspaceId)}`,
+        `/api/${vmId}/dcr_list?workspaceId=${encodeURIComponent(currentWorkspace.id)}`, // Wysyłamy pełne ID
         { credentials: "include" }
       );
       const data = await res.json();
@@ -103,7 +106,7 @@ const VMMonitor = () => {
     } else {
       setDcrList([]);
     }
-  }, [vmId, selectedWorkspaceId]);
+  }, [vmId, selectedWorkspaceId, workspaces]); // Dodano workspaces
 
   const fetchWorkspaces = async (subscriptionId) => {
     setWsLoading(true);
@@ -118,7 +121,7 @@ const VMMonitor = () => {
       const fetchedWorkspaces = data.value || [];
       setWorkspaces(fetchedWorkspaces);
       if (!selectedWorkspaceId && fetchedWorkspaces.length > 0) {
-        setSelectedWorkspaceId(fetchedWorkspaces[0].id);
+        setSelectedWorkspaceId(fetchedWorkspaces[0].workspaceGuid); // ZMIANA: Użyj GUID
       } else if (fetchedWorkspaces.length === 0) {
         setSelectedWorkspaceId("");
       }
@@ -146,7 +149,9 @@ const VMMonitor = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd tworzenia workspace");
       await fetchWorkspaces(createWsForm.subscriptionId);
-      if (data.workspace?.id) setSelectedWorkspaceId(data.workspace.id);
+      if (data.workspace?.workspaceGuid) { // ZMIANA: Użyj GUID
+        setSelectedWorkspaceId(data.workspace.workspaceGuid);
+      }
       setShowCreateWs(false);
       alert(data.message || "Workspace utworzony");
     } catch (err) {
@@ -168,34 +173,31 @@ const VMMonitor = () => {
     }
   };
 
-  const handleExportLogs = (type) => {
-    if (!selectedWorkspaceId) {
-      alert("Wybierz Log Analytics Workspace.");
+const handleExportLogs = (type) => {
+    const currentWorkspace = workspaces.find(ws => ws.workspaceGuid === selectedWorkspaceId);
+    if (!currentWorkspace) {
+      alert("Nie można znaleźć GUID dla wybranego Workspace. Odśwież listę workspace'ów.");
       return;
     }
-    if (!vmId) {
+    if (!vmId){
       alert("Brakuje ID maszyny wirtualnej.");
       return;
     }
 
-    const downloadUrl = `/api/vm/${vmId}/logs/export?type=${type}&workspaceId=${encodeURIComponent(selectedWorkspaceId)}`;
+    const backendUrl = "http://localhost:5000";
+    
+    const downloadUrl = `${backendUrl}/api/vm/${vmId}/logs/export?type=${type}&workspaceGuid=${encodeURIComponent(currentWorkspace.workspaceGuid)}`;
+    
+    console.log("Attempting to download from ABSOLUTE URL:", downloadUrl);
 
-    // ZMIANA: Zamiast window.location.href, użyj tej metody
-    console.log("Attempting to download from:", downloadUrl); // Ten log powinien być teraz widoczny
-
-    // Utwórz niewidzialny link
     const link = document.createElement('a');
     link.href = downloadUrl;
-    // Opcjonalnie: Ustaw sugerowaną nazwę pliku
     link.setAttribute('download', `${vmId}_${type}_logs.csv`);
-    // Dodaj link do dokumentu (wymagane w niektórych przeglądarkach)
     document.body.appendChild(link);
-    // Symuluj kliknięcie
     link.click();
-    // Usuń link
     document.body.removeChild(link);
   };
-
+  
   const renderChart = (metric) => (
     <div key={metric.name} style={{ marginBottom: "40px" }}>
       <h3>{metric.name} ({metric.unit})</h3>
@@ -222,6 +224,7 @@ const VMMonitor = () => {
         <li><strong>Subscription ID:</strong> {vmInfo?.subscriptionId || "—"}</li>
         <li><strong>Resource Group:</strong> {vmInfo?.resourceGroup || "—"}</li>
         <li><strong>Resource ID:</strong> {vmInfo?.resourceId || "—"}</li>
+        <li><strong>Lokalizacja:</strong> {vmInfo?.location || "—"}</li>
         <li>
           <strong>Status agenta:</strong> {agentStatus}
           {agentStatus === "❌ Brak" && <button onClick={installAMA} style={installButtonStyle}>🔧 Zainstaluj AMA</button>}
@@ -270,7 +273,7 @@ const VMMonitor = () => {
                  : (
                   <select value={selectedWorkspaceId} onChange={(e) => setSelectedWorkspaceId(e.target.value)} style={wsSelectStyle}>
                     <option value="">-- Wybierz Workspace --</option>
-                    {workspaces.map((ws) => ( <option key={ws.id} value={ws.id}>{ws.name} — {ws.location} ({ws.resourceGroup})</option> ))}
+                    {workspaces.map((ws) => ( <option key={ws.id} value={ws.workspaceGuid}>{ws.name} — {ws.location} ({ws.resourceGroup})</option> ))}
                   </select>
                  )}
                 <button onClick={() => setShowCreateWs((s) => !s)} style={createWsButtonStyle}>
@@ -294,7 +297,7 @@ const VMMonitor = () => {
                </form>}
 
               <div style={{ marginTop: "18px" }}>
-                <h4>🔗 Reguły DCR dla tej VM wysyłające do: {workspaces.find(ws => ws.id === selectedWorkspaceId)?.name || 'N/A'}</h4>
+                <h4>🔗 Reguły DCR dla tej VM wysyłające do: {workspaces.find(ws => ws.workspaceGuid === selectedWorkspaceId)?.name || 'N/A'}</h4>
                  <button onClick={() => fetchDcrList(selectedWorkspaceId)} style={refreshDcrButtonStyle} disabled={!selectedWorkspaceId || dcrLoading}>
                   🔄 Odśwież listę DCR
                 </button>
@@ -328,7 +331,7 @@ const VMMonitor = () => {
               </div>
 
               <div style={{ marginTop: "30px" }}>
-                <h4>📄 Pobierz logi z workspace: {workspaces.find(ws => ws.id === selectedWorkspaceId)?.name || 'N/A'}</h4>
+                <h4>📄 Eksportuj logi z workspace: {workspaces.find(ws => ws.workspaceGuid === selectedWorkspaceId)?.name || 'N/A'}</h4>
                 <div style={logQueryStyle}>
                   <label>Wybierz typ logów do eksportu:</label>
                   <button onClick={() => handleExportLogs('perf')} disabled={!selectedWorkspaceId} style={exportButtonStyle}>
@@ -337,7 +340,6 @@ const VMMonitor = () => {
                   <button onClick={() => handleExportLogs('heartbeat')} disabled={!selectedWorkspaceId} style={exportButtonStyle}>
                     Pobierz Heartbeat (CSV)
                   </button>
-                  
                 </div>
               </div>
             </div>
@@ -363,6 +365,9 @@ const createDcrButtonStyle = { marginLeft: "12px", padding: "6px 10px", backgrou
 const refreshDcrButtonStyle = { marginTop: "10px", padding: "6px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginRight: '10px'};
 const logQueryStyle = { display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px", flexWrap: 'wrap'};
 const exportButtonStyle = { padding: "6px 12px", background: "#38A169", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginLeft: "5px"};
+const logTableStyle = { borderCollapse: "collapse", width: "100%", marginTop: '10px' };
+const logThStyle = { border: "1px solid #ccc", padding: "6px", background: "#eee"};
+const logTdStyle = { border: "1px solid #ccc", padding: "6px"};
 const createWsFormStyle = { marginTop: "12px", padding: "12px", border: "1px solid #eee", borderRadius: "8px"};
 const createWsGridStyle = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px"};
 const createWsInputStyle = { width: "100%", padding: "8px", marginTop: "6px", borderRadius: "4px"};
