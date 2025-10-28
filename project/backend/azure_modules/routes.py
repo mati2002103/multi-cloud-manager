@@ -6,7 +6,7 @@ from .subnet import subnet_create
 from .vmmonitor import vm_az_monitor_metrics,agent_status,ensure_ama
 from .vm import list_virtual_machines, create_vm,delete_vm
 from .containers import list_containers,create_container,delete_container,restart_container
-from .log_analytics import create_log_analytics,list_log_analytics,list_dcr,create_dcr_and_associate_vm,export_vm_logs_csv
+from .log_analytics import create_log_analytics,list_log_analytics,list_dcr,create_dcr_and_associate_vm,export_vm_logs_csv,query_vm_logs
 from .storage import (
     list_storage_accounts,create_storage_account,delete_storage_account,
     list_blob_containers,create_blob_container,delete_blob_container,
@@ -14,6 +14,8 @@ from .storage import (
 
 )
 from .utils import api_user, api_subscriptions, logout, api_accounts
+from .alerts import create_metric_alert
+
 
 azure_bp_module = Blueprint("azure_module", __name__)
 
@@ -69,18 +71,22 @@ azure_bp_module.route("/api/create_dcr_and_associate_for_vm", methods=["POST"])(
 
 #logs
 azure_bp_module.route("/api/vm/<vm_id>/logs/export", methods=["GET"])(export_vm_logs_csv)
+azure_bp_module.route("/api/vm/<vm_id>/logs/query", methods=["POST"])(query_vm_logs)
 
 #containers
 azure_bp_module.route("/api/list_containers", methods=["GET"])(list_containers)
 azure_bp_module.route("/api/create_container", methods=["POST"])(create_container)
 azure_bp_module.route("/api/delete_container", methods=["DELETE"])(delete_container)
 azure_bp_module.route("/api/restart_container", methods=["POST"])(restart_container)
-#
+
 # Session
 azure_bp_module.route("/api/user")(api_user)
 azure_bp_module.route("/api/subscriptions")(api_subscriptions)
 azure_bp_module.route("/api/accounts")(api_accounts)
 azure_bp_module.route("/api/logout")(logout)
+
+#alerts
+azure_bp_module.route("/api/vm/create-alert", methods=["POST"])(create_metric_alert)
 
 
 

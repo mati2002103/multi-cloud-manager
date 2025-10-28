@@ -9,8 +9,7 @@ azure-mgmt-compute
 azure-mgmt-network
 azure-monitor-query==1.2.0
 azure-mgmt-loganalytics
-azure-loganalytics
-azure-mgmt-monitor==3.0.0
+azure-mgmt-monitor 
 azure-mgmt-storage
 azure-mgmt-containerinstance
 azure-storage-blob
@@ -28,3 +27,4 @@ google-cloud-compute
 google-cloud-run
 
 six
+packaging

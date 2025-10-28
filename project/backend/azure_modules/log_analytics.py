@@ -309,7 +309,6 @@ def export_vm_logs_csv(vm_id):
          return jsonify({"error": "Wymagany jest parametr 'workspaceGuid' (sam GUID)."}), 400
 
     try:
-        # Używamy poświadczeń aplikacji (Service Principal)
         credential = ClientSecretCredential(
             tenant_id=TENANT_ID,
             client_id=CLIENT_ID,
@@ -322,9 +321,7 @@ def export_vm_logs_csv(vm_id):
         return jsonify({"error": f"Błąd uwierzytelniania aplikacji: {str(e)}"}), 500
 
     try:
-        # ZMIANA: Modyfikujemy zapytania KQL, aby były bardziej użyteczne w CSV
         if log_type == "perf":
-            # To zapytanie agreguje dane i usuwa duplikaty (total, cpu0)
             query = f"""
             Perf
             | where Computer == '{vm_id}'
@@ -334,8 +331,7 @@ def export_vm_logs_csv(vm_id):
             | order by TimeGenerated desc
             | top 500 by TimeGenerated
             """
-        else: # heartbeat
-            # To zapytanie wybiera najważniejsze kolumny
+        else: 
             query = f"""
             Heartbeat
             | where Computer == '{vm_id}'
@@ -343,7 +339,6 @@ def export_vm_logs_csv(vm_id):
             | project TimeGenerated, Computer, Category, OSType, OSName, Version, ResourceId
             """
 
-        print(f"Executing KQL Query: {query} on GUID: {workspace_guid}")
         
         response = client.query_workspace(
             workspace_id=workspace_guid,
@@ -384,3 +379,66 @@ def export_vm_logs_csv(vm_id):
     except Exception as e:
        print(f"--- KRYTYCZNY BŁĄD --- \n{traceback.format_exc()}\n")
        return jsonify({"error": f"An unexpected error occurred during log export: {str(e)}"}), 500
+    
+
+def query_vm_logs(vm_id):
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Brak danych w ciele żądania."}), 400
+
+    workspace_guid = data.get("workspaceGuid")
+    kql_query = data.get("kqlQuery")
+
+    if not workspace_guid or not kql_query:
+        return jsonify({"error": "Wymagane są 'workspaceGuid' i 'kqlQuery'."}), 400
+
+   
+    dangerous_keywords = ['delete', 'update', 'modify', 'insert', 'drop']
+    if any(keyword in kql_query.lower() for keyword in dangerous_keywords):
+        return jsonify({"error": "Zapytanie zawiera niedozwolone słowa kluczowe (np. delete, update)."}), 400
+    
+    if f"Computer == '{vm_id}'" not in kql_query and f"Computer == \"{vm_id}\"" not in kql_query:
+         return jsonify({"error": f"Zapytanie musi zawierać filtr 'where Computer == \"{vm_id}\"'."}), 400
+    
+
+    try:
+        credential = ClientSecretCredential(
+            tenant_id=TENANT_ID,
+            client_id=CLIENT_ID,
+            client_secret=CLIENT_SECRET
+        )
+        client = LogsQueryClient(credential)
+    except Exception as e:
+        print(f"--- BŁĄD UWIERZYTELNIANIA --- \n{traceback.format_exc()}\n")
+        return jsonify({"error": f"Błąd uwierzytelniania aplikacji: {str(e)}"}), 500
+
+    try:
+        print(f"Executing Custom KQL Query: {kql_query} on GUID: {workspace_guid}")
+        
+        response = client.query_workspace(
+            workspace_id=workspace_guid,
+            query=kql_query,
+            timespan=timedelta(days=1) 
+        )
+
+        if response.status == LogsQueryStatus.SUCCESS and response.tables:
+            table = response.tables[0]
+            if not table.rows:
+                return jsonify({"message": "Zapytanie nie zwróciło danych.", "value": []}), 200
+
+            header = table.columns
+            result_list = []
+            for row in table.rows:
+                row_data = [str(item) if isinstance(item, (datetime, timedelta)) else item for item in row]
+                result_list.append(dict(zip(header, row_data)))
+            
+            return jsonify({"value": result_list}) 
+        else:
+             return jsonify({"error": "Nie udało się wykonać zapytania KQL.", "details": str(response.partial_error)}), 500
+
+    except HttpResponseError as e:
+       print(f"--- BŁĄD HTTP (API) --- \n{traceback.format_exc()}\n")
+       return jsonify({"error": f"Azure API error during query: {str(e)}"}), e.status_code or 500
+    except Exception as e:
+       print(f"--- KRYTYCZNY BŁĄD --- \n{traceback.format_exc()}\n")
+       return jsonify({"error": f"An unexpected error occurred during query execution: {str(e)}"}), 500
