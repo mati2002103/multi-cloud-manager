@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 
-const CreateMetricAlertModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
+const CreateMetricAlertModal = ({ isOpen, onClose, onCreated, vmInfo, vmId }) => {
   const [alertName, setAlertName] = useState("");
   const [metricName, setMetricName] = useState("Percentage CPU");
   const [threshold, setThreshold] = useState(90);
@@ -10,25 +10,23 @@ const CreateMetricAlertModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
   const [error, setError] = useState(null);
 
   const handleSubmit = async () => {
-    if (!vmInfo?.subscriptionId || !vmInfo?.resourceGroup || !vmInfo?.location || !vmInfo?.resourceId) {
-      setError("Brakujące informacje o VM (Sub, RG, Lokalizacja, ID).");
-      return;
+    if (!vmId) {
+        setError("Brakujące informacje o VM (ID lub Lokalizacja).");
+        return;
     }
+    
     setLoading(true);
     setError(null);
     try {
       const payload = {
-        subscriptionId: vmInfo.subscriptionId,
-        resourceGroup: vmInfo.resourceGroup, 
-        location: vmInfo.location,
-        vmResourceId: vmInfo.resourceId,
         alertName: alertName,
         metricName: metricName,
         threshold: threshold,
         notifyEmail: notifyEmail,
       };
+      console.log(vmId)
 
-      const res = await fetch("/api/vm/create-alert", {
+      const res = await fetch(`/api/vm/${vmId}/create-alert`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -52,7 +50,7 @@ const CreateMetricAlertModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
   return (
     <div style={styles.overlay}>
       <div style={styles.modal}>
-        <h2>🚨 Utwórz nowy alert metryki dla {vmInfo?.vm || 'VM'}</h2>
+        <h2>🚨 Utwórz nowy alert metryki dla {vmId}</h2>
 
         <label>Nazwa alertu:</label>
         <input
@@ -67,7 +65,6 @@ const CreateMetricAlertModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
         <select value={metricName} onChange={e => setMetricName(e.target.value)} style={styles.input}>
           <option value="Percentage CPU">Percentage CPU</option>
           <option value="Available Memory Bytes">Available Memory Bytes</option>
-          {/* Dodaj inne metryki z vmInfo.metrics jeśli chcesz */}
         </select>
 
         <label>Próg (Threshold):</label>
@@ -78,7 +75,7 @@ const CreateMetricAlertModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
           style={styles.input}
         />
          <small style={styles.smallText}>
-            Dla "Percentage CPU" wpisz np. 90. Dla "Available Memory Bytes" wpisz np. 500000000 (dla 500MB).
+            Dla "Percentage CPU" wpisz np. 90.
         </small>
 
         <label>Powiadom e-mail:</label>
@@ -102,7 +99,6 @@ const CreateMetricAlertModal = ({ isOpen, onClose, onCreated, vmInfo }) => {
     </div>
   );
 };
-
 // Style
 const styles = {
   overlay: {

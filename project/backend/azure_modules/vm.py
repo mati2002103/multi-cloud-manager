@@ -18,6 +18,7 @@ def find_vm_by_name(vm_id, credential):
                 return {
                     "subscriptionId": sub.subscription_id,
                     "resourceGroup": vm.id.split("/")[4],
+                    "location": vm.location,
                     "resourceId": vm.id
                 }
     return None

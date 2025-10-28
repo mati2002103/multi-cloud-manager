@@ -468,24 +468,25 @@ const VMMonitor = () => {
             </div>
           )}
           {activeTab === "alerts" && (
-          <div style={{ marginTop: "10px" }}>
-            <h3>🚨 Alerty dla {vmId}</h3>
-            
-            <button 
-              onClick={() => setShowCreateAlertModal(true)} 
-              style={buttonStyle}
-            >
-              ➕ Utwórz nową regułę alertu
-            </button>
-
-            <CreateMetricAlertModal
-              isOpen={showCreateAlertModal}
-              onClose={() => setShowCreateAlertModal(false)}
-              onCreated={() => { /* Tu dodaj fetchAlerts() */ }}
-              vmInfo={vmInfo}
-            />
-          </div>
-        )}
+  <div style={{ marginTop: "10px" }}>
+    <h3>🚨 Alerty dla {vmId}</h3>
+    
+    <button 
+      onClick={() => setShowCreateAlertModal(true)} 
+      style={buttonStyle}
+    >
+      ➕ Utwórz nową regułę alertu
+    </button>
+    
+    <CreateMetricAlertModal
+      isOpen={showCreateAlertModal}
+      onClose={() => setShowCreateAlertModal(false)}
+      onCreated={() => { /* Tu dodaj fetchAlerts() */ }}
+      vmInfo={vmInfo}
+      vmId={vmId} 
+    />
+  </div>
+)}
         </>
       )}
     </div>

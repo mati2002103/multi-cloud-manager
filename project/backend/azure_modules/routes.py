@@ -14,7 +14,7 @@ from .storage import (
 
 )
 from .utils import api_user, api_subscriptions, logout, api_accounts
-from .alerts import create_metric_alert
+from .alerts import create_metric_alert,list_alerts_for_vm
 
 
 azure_bp_module = Blueprint("azure_module", __name__)
@@ -86,7 +86,9 @@ azure_bp_module.route("/api/accounts")(api_accounts)
 azure_bp_module.route("/api/logout")(logout)
 
 #alerts
-azure_bp_module.route("/api/vm/create-alert", methods=["POST"])(create_metric_alert)
+azure_bp_module.route("/api/vm/<vm_id>/create-alert", methods=["POST"])(create_metric_alert)
+azure_bp_module.route("/api/vm/<vm_id>/list_alerts_for_vm", methods=["GET"])(list_alerts_for_vm)
+
 
 
 
