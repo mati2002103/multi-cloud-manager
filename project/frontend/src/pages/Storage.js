@@ -138,21 +138,40 @@ const Storage = () => {
           <p>Brak dostępnych Storage Accounts w Azure (lub nie jesteś zalogowany).</p>
         ) : (
           <table style={tableStyle}>
+            {/* --- ZMIANY W NAGŁÓWKACH TABELI --- */}
             <thead>
               <tr style={{ backgroundColor: "#f5f5f5" }}>
                 <th style={thStyle}>Nazwa</th>
                 <th style={thStyle}>Grupa zasobów</th>
                 <th style={thStyle}>Lokalizacja</th>
-                <th style={thStyle}>SKU</th>
+                <th style={thStyle}>Rodzaj konta</th>
+                <th style={thStyle}>Użycie</th>
+                <th style={thStyle}>Warstwa</th>
+                <th style={thStyle}>Dostęp publiczny</th>
+                <th style={thStyle}>SKU (Replikacja)</th>
                 <th style={thStyle}>Akcje</th>
               </tr>
             </thead>
+            {/* --- KONIEC ZMIAN W NAGŁÓWKACH --- */}
+            
             <tbody>
+              {/* --- ZMIANY W KOMÓRKACH TABELI --- */}
               {azureAccounts.map((acc, idx) => (
                 <tr key={idx}>
                   <td style={tdStyle}>{acc.name}</td>
                   <td style={tdStyle}>{acc.resourceGroup}</td>
                   <td style={tdStyle}>{acc.location}</td>
+                  <td style={tdStyle}>{acc.storageType}</td>
+                  <td style={tdStyle}>{acc.usage}</td>
+                  <td style={tdStyle}>{acc.accessTier || 'N/A'}</td>
+                  <td style={
+                    // Stylizuje komórkę na czerwono jeśli dostęp jest Włączony (niebezpieczne)
+                    acc.publicAccess === "Włączony" 
+                    ? { ...tdStyle, color: '#D9534F', fontWeight: 'bold'} 
+                    : tdStyle
+                  }>
+                    {acc.publicAccess}
+                  </td>
                   <td style={tdStyle}>{acc.sku}</td>
                   <td style={tdStyle}>
                     <button onClick={() => handleDeleteAzure(acc)} title="Usuń">🗑️</button>
@@ -167,6 +186,7 @@ const Storage = () => {
                   </td>
                 </tr>
               ))}
+              {/* --- KONIEC ZMIAN W KOMÓRKACH --- */}
             </tbody>
           </table>
         )}
