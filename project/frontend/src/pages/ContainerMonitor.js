@@ -3,7 +3,6 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-// import CreateContainerAlertModal from "../components/CreateContainerAlertModal";
 
 const ContainerMonitor = () => {
   const { containerId } = useParams();
@@ -23,7 +22,7 @@ const ContainerMonitor = () => {
   const [kqlLoading, setKqlLoading] = useState(false);
   const [kqlError, setKqlError] = useState(null);
   
-  const [workspaces, setWorkspaces] = useState([]); // Ten stan jest potrzebny tylko dla 'create workspace'
+  const [workspaces, setWorkspaces] = useState([]);
   const [showCreateWs, setShowCreateWs] = useState(false);
   const [creatingWs, setCreatingWs] = useState(false);
   const [createWsForm, setCreateWsForm] = useState({
@@ -31,7 +30,24 @@ const ContainerMonitor = () => {
     location: "westeurope", sku: "PerGB2018", retentionInDays: 30,
   });
 
+  // --- Stany dla Alertów ---
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState(null);
+  
+  // --- Stany dla Modala Tworzenia Alertu ---
   const [showCreateAlertModal, setShowCreateAlertModal] = useState(false);
+  const [creatingAlert, setCreatingAlert] = useState(false);
+  const [createAlertError, setCreateAlertError] = useState(null);
+  const [createAlertForm, setCreateAlertForm] = useState({
+    actionGroupId: "", // Użytkownik musi to podać
+    metricName: "CpuUsage",
+    threshold: 80,
+    operator: "GreaterThan",
+    timeWindow: "PT5M",
+    evaluationFrequency: "PT1M"
+  });
+  // ------------------------------------------
 
   useEffect(() => {
     setLoading(true);
@@ -66,7 +82,6 @@ const ContainerMonitor = () => {
       .finally(() => setWsLoading(false));
   }, [containerId]);
   
-  // Funkcja fetchWorkspaces jest potrzebna tylko dla modala "Nowy workspace"
   const fetchWorkspaces = useCallback(async (subscriptionId) => {
     if (!subscriptionId) return;
     setWsLoading(true);
@@ -89,12 +104,52 @@ const ContainerMonitor = () => {
 
   useEffect(() => {
     if (containerInfo?.subscriptionId) {
-      fetchWorkspaces(containerInfo.subscriptionId); // Pobierz wszystkie, aby modal 'Nowy' wiedział, co istnieje
-       if (containerInfo?.resourceGroup) {
-         setCreateWsForm((f) => ({ ...f, subscriptionId: containerInfo.subscriptionId, rgName: containerInfo.resourceGroup }));
-       }
+      fetchWorkspaces(containerInfo.subscriptionId);
+        if (containerInfo?.resourceGroup) {
+          setCreateWsForm((f) => ({ ...f, subscriptionId: containerInfo.subscriptionId, rgName: containerInfo.resourceGroup }));
+        }
     }
   }, [containerInfo?.subscriptionId, containerInfo?.resourceGroup, fetchWorkspaces]);
+
+  // --- NOWA FUNKCJA (WYDZIELONA) DO POBIERANIA ALERTÓW ---
+  const fetchAlerts = useCallback(async () => {
+    if (!containerInfo?.subscriptionId || !containerInfo?.resourceGroup) {
+      return; // Nie gotowy do pobrania
+    }
+    
+    setAlertsLoading(true);
+    setAlertsError(null);
+    setAlerts([]); // Wyczyść poprzednie wyniki
+
+    try {
+      const subId = containerInfo.subscriptionId;
+      const rgName = containerInfo.resourceGroup;
+      
+      const url = `/api/container/${containerId}/container_alerts?sub_id=${encodeURIComponent(subId)}&rg_name=${encodeURIComponent(rgName)}`;
+
+      const res = await fetch(url, { credentials: "include" });
+      const data = await res.json(); 
+
+      if (!res.ok) {
+        throw new Error(data.error || "Błąd pobierania alertów");
+      }
+      setAlerts(data.alerts || []);
+
+    } catch (err) {
+      console.error("Błąd fetchAlerts:", err);
+      setAlertsError(err.message);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, [containerId, containerInfo?.subscriptionId, containerInfo?.resourceGroup]); // Zależności
+
+  // --- ZAKTUALIZOWANY USEEFFECT ---
+  useEffect(() => {
+    if (activeTab === "alerts") {
+      fetchAlerts();
+    }
+  }, [activeTab, fetchAlerts]); // Zależność od fetchAlerts
+  // -------------------------------------------------
 
   const createWorkspace = async (e) => {
     e.preventDefault();
@@ -112,7 +167,6 @@ const ContainerMonitor = () => {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd tworzenia workspace");
       
-      // Po utworzeniu, odśwież powiązany workspace
       fetch(`/api/container/${containerId}/linked_workspace`, { credentials: "include" })
         .then(res => res.json()).then(data => setLinkedWorkspace(data.value));
         
@@ -126,15 +180,17 @@ const ContainerMonitor = () => {
   };
 
   const handleExportLogs = (type) => {
-    if (!linkedWorkspace) { alert("Kontener nie jest powiązany z Log Analytics Workspace."); return; }
-    
+    if (!linkedWorkspace) {
+      alert("Kontener nie jest powiązany z Log Analytics Workspace.");
+      return;
+    }
     const backendUrl = "http://localhost:5000";
-    const downloadUrl = `${backendUrl}/api/container/${containerId}/logs/export?type=${type}&workspaceGuid=${encodeURIComponent(linkedWorkspace.workspaceGuid)}`;
+    const downloadUrl = `${backendUrl}/api/container/${containerId}/export_logs?type=${type}&workspaceGuid=${encodeURIComponent(linkedWorkspace.workspaceGuid)}`;
     
-    console.log("Attempting to download from ABSOLUTE URL:", downloadUrl);
+    console.log("Attempting to download from RELATIVE URL:", downloadUrl);
     const link = document.createElement('a');
     link.href = downloadUrl;
-    link.setAttribute('download', `${containerId}_logs.csv`); // Uproszczona nazwa
+    link.setAttribute('download', `${containerId}_logs.csv`); 
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -149,7 +205,7 @@ const ContainerMonitor = () => {
     setKqlResults([]);
 
     try {
-      const res = await fetch(`/api/container/${containerId}/logs/query`, {
+      const res = await fetch(`/api/container/${containerId}/run_query`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -158,12 +214,25 @@ const ContainerMonitor = () => {
           kqlQuery: kqlQuery
         }),
       });
-      const data = await res.json();
+      
+      const data = await res.json(); 
       if (!res.ok) throw new Error(data.error || "Błąd zapytania KQL");
-      setKqlResults(data.value || []);
-      if (!data.value || data.value.length === 0) {
+
+      if (data.rows && data.rows.length > 0) {
+        const columns = data.columns;
+        const formattedResults = data.rows.map(row => {
+          let rowObject = {};
+          columns.forEach((col, index) => {
+            rowObject[col] = row[index];
+          });
+          return rowObject;
+        });
+        setKqlResults(formattedResults);
+      } else {
+        setKqlResults([]);
         setKqlError("Zapytanie nie zwróciło żadnych danych.");
       }
+
     } catch (err) {
       setKqlError(err.message);
     } finally {
@@ -171,7 +240,91 @@ const ContainerMonitor = () => {
     }
   };
 
-  // ZMIANA: Dodano brakującą funkcję
+  // --- NOWE FUNKCJE OBSŁUGI ALERTÓW ---
+  
+  // Zmiana stanu formularza modala
+  const handleAlertFormChange = (e) => {
+    const { name, value } = e.target;
+    setCreateAlertForm(prev => ({ ...prev, [name]: value }));
+  };
+
+  // Wysyłanie formularza tworzenia alertu
+  const handleCreateAlertSubmit = async (e) => {
+    e.preventDefault();
+    if (!createAlertForm.actionGroupId) {
+      setCreateAlertError("Action Group ID jest wymagane.");
+      return;
+    }
+    setCreatingAlert(true);
+    setCreateAlertError(null);
+
+    try {
+      const payload = {
+        ...createAlertForm,
+        subscriptionId: containerInfo.subscriptionId,
+        resourceGroup: containerInfo.resourceGroup,
+        threshold: Number(createAlertForm.threshold) // Upewnij się, że próg jest liczbą
+      };
+      
+      const res = await fetch(`/api/container/${containerId}/create_container_alert`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd tworzenia alertu");
+
+      alert(data.message || "Alert utworzony pomyślnie!");
+      setShowCreateAlertModal(false);
+      // Resetuj formularz do wartości domyślnych
+      setCreateAlertForm({
+        actionGroupId: "", metricName: "CpuUsage", threshold: 80,
+        operator: "GreaterThan", timeWindow: "PT5M", evaluationFrequency: "PT1M"
+      });
+      fetchAlerts(); // Odśwież listę alertów
+
+    } catch (err) {
+      setCreateAlertError(err.message);
+    } finally {
+      setCreatingAlert(false);
+    }
+  };
+
+  // Usuwanie alertu
+  const handleDeleteAlert = async (alertName) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć alert '${alertName}'?`)) {
+      return;
+    }
+    
+    try {
+      const payload = {
+        subscriptionId: containerInfo.subscriptionId,
+        resourceGroup: containerInfo.resourceGroup,
+        alertName: alertName
+      };
+
+      const res = await fetch(`/api/container/${containerId}/delete_container_alert`, {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania alertu");
+
+      alert(data.message || "Alert usunięty.");
+      // Odśwież listę przez filtrowanie stanu (szybsze niż ponowne pobieranie)
+      setAlerts(currentAlerts => currentAlerts.filter(a => a.name !== alertName));
+
+    } catch (err) {
+      alert(`❌ Błąd: ${err.message}`);
+    }
+  };
+  // ------------------------------------
+
   const renderKqlTable = () => {
     if (kqlResults.length === 0) {
       return null;
@@ -195,7 +348,6 @@ const ContainerMonitor = () => {
     );
   };
 
-  // ZMIANA: Dodano brakującą funkcję
   const renderChart = (metric) => (
     <div key={metric.name} style={{ marginBottom: "40px" }}>
       <h3>{metric.name} ({metric.unit})</h3>
@@ -208,6 +360,97 @@ const ContainerMonitor = () => {
       </ResponsiveContainer>
     </div>
   );
+
+  // --- NOWA FUNKCJA: RENDEROWANIE MODALA TWORZENIA ALERTU ---
+  const renderCreateAlertModal = () => {
+    if (!showCreateAlertModal) return null;
+
+    return (
+      <div style={modalBackdropStyle} onClick={() => setShowCreateAlertModal(false)}>
+        <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
+          <h2 style={modalTitleStyle}>➕ Utwórz nową regułę alertu</h2>
+          <p>Ustaw parametry dla alertu metryki. `Subscription ID` i `Resource Group` są pobierane automatycznie.</p>
+          
+          <form style={modalFormStyle} onSubmit={handleCreateAlertSubmit}>
+            <label style={modalLabelStyle}>Action Group ID (Wymagane)</label>
+            <input
+              style={modalInputStyle}
+              type="text"
+              name="actionGroupId"
+              value={createAlertForm.actionGroupId}
+              onChange={handleAlertFormChange}
+              placeholder="/subscriptions/sub-id/resourceGroups/rg/providers/..."
+              required
+            />
+            
+            <label style={modalLabelStyle}>Metryka</label>
+            <select
+              style={modalInputStyle}
+              name="metricName"
+              value={createAlertForm.metricName}
+              onChange={handleAlertFormChange}
+            >
+              <option value="CpuUsage">CpuUsage</option>
+              <option value="MemoryUsage">MemoryUsage</option>
+              {/* Dodaj inne metryki, jeśli backend je obsługuje */}
+            </select>
+
+            <label style={modalLabelStyle}>Próg (np. 80 dla 80%)</label>
+            <input
+              style={modalInputStyle}
+              type="number"
+              name="threshold"
+              value={createAlertForm.threshold}
+              onChange={handleAlertFormChange}
+            />
+
+            <label style={modalLabelStyle}>Operator</label>
+            <select
+              style={modalInputStyle}
+              name="operator"
+              value={createAlertForm.operator}
+              onChange={handleAlertFormChange}
+            >
+              <option value="GreaterThan">Większe niż</option>
+              <option value="LessThan">Mniejsze niż</option>
+              <option value="GreaterOrEqual">Większe lub równe</option>
+              <option value="LessOrEqual">Mniejsze lub równe</option>
+            </select>
+            
+            <label style={modalLabelStyle}>Okres agregacji (np. PT5M)</label>
+            <input
+              style={modalInputStyle}
+              type="text"
+              name="timeWindow"
+              value={createAlertForm.timeWindow}
+              onChange={handleAlertFormChange}
+            />
+            
+            <label style={modalLabelStyle}>Częstotliwość ewaluacji (np. PT1M)</label>
+            <input
+              style={modalInputStyle}
+              type="text"
+              name="evaluationFrequency"
+              value={createAlertForm.evaluationFrequency}
+              onChange={handleAlertFormChange}
+            />
+
+            {createAlertError && <p style={{ color: "red", marginTop: '10px' }}>❌ {createAlertError}</p>}
+
+            <div style={createWsBtnContainerStyle}>
+              <button type="submit" disabled={creatingAlert} style={createWsSubmitStyle}>
+                {creatingAlert ? "Tworzenie..." : "Utwórz alert"}
+              </button>
+              <button type="button" onClick={() => setShowCreateAlertModal(false)} style={createWsCancelStyle}>
+                Anuluj
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  };
+  // --------------------------------------------------------
 
   const selectedMetricData = containerInfo?.metrics?.find((m) => m.name === selectedMetric);
 
@@ -241,8 +484,8 @@ const ContainerMonitor = () => {
       </div>
 
       {loading ? ( <p>⏳ Ładowanie danych...</p> )
-       : containerInfo?.error ? ( <p style={{ color: "red" }}>❌ {containerInfo.error}</p> )
-       : (
+        : containerInfo?.error ? ( <p style={{ color: "red" }}>❌ {containerInfo.error}</p> )
+        : (
         <>
           {activeTab === "azureMonitor" && (
             <>
@@ -269,19 +512,18 @@ const ContainerMonitor = () => {
               <div style={{ margin: "12px 0", padding: "10px", border: "1px solid #eee", borderRadius: "4px" }}>
                 <label style={{ fontWeight: 600, display: 'block', marginBottom: '5px' }}>Powiązany Log Analytics Workspace:</label>
                 {wsLoading ? ( <span>⏳ Sprawdzanie...</span> )
-                 : wsError ? ( <span style={{ color: "red" }}>❌ {wsError}</span> )
-                 : linkedWorkspace ? (
-                   <span>
-                     <strong>{linkedWorkspace.name}</strong> ({linkedWorkspace.location})
-                   </span>
-                 ) : (
-                   <span style={{ color: "#777" }}>
-                     Kontener nie jest skonfigurowany do wysyłania logów do Log Analytics.
-                   </span>
-                 )}
+                  : wsError ? ( <span style={{ color: "red" }}>❌ {wsError}</span> )
+                  : linkedWorkspace ? (
+                    <span>
+                      <strong>{linkedWorkspace.name}</strong> ({linkedWorkspace.location})
+                    </span>
+                  ) : (
+                    <span style={{ color: "#777" }}>
+                      Kontener nie jest skonfigurowany do wysyłania logów do Log Analytics.
+                    </span>
+                  )}
               </div>
 
-              {/* Pokaż opcję "Nowy workspace" tylko jeśli jest błąd lub lista jest pusta */}
               {(wsError || workspaces.length === 0) && !linkedWorkspace && (
                 <button onClick={() => setShowCreateWs((s) => !s)} style={{...createWsButtonStyle, marginLeft: 0}}>
                   {showCreateWs ? "✖ Anuluj" : "➕ Nowy workspace"}
@@ -289,26 +531,26 @@ const ContainerMonitor = () => {
               )}
 
               {showCreateWs && <form onSubmit={createWorkspace} style={createWsFormStyle}>
-                 <div style={createWsGridStyle}>
-                   <div><label style={createWsLabelStyle}>Subscription ID</label><input value={createWsForm.subscriptionId} onChange={(e) => setCreateWsForm(f => ({...f, subscriptionId: e.target.value}))} required style={createWsInputStyle} /></div>
-                   <div><label style={createWsLabelStyle}>Resource Group</label><input value={createWsForm.rgName} onChange={(e) => setCreateWsForm(f => ({...f, rgName: e.target.value}))} required style={createWsInputStyle} /></div>
-                   <div><label style={createWsLabelStyle}>Workspace Name</label><input value={createWsForm.workspaceName} onChange={(e) => setCreateWsForm(f => ({...f, workspaceName: e.target.value}))} required style={createWsInputStyle} /></div>
-                   <div><label style={createWsLabelStyle}>Location</label><input value={createWsForm.location} onChange={(e) => setCreateWsForm(f => ({...f, location: e.target.value}))} style={createWsInputStyle} /></div>
-                   <div><label style={createWsLabelStyle}>SKU</label><input value={createWsForm.sku} onChange={(e) => setCreateWsForm(f => ({...f, sku: e.target.value}))} style={createWsInputStyle} /></div>
-                   <div><label style={createWsLabelStyle}>Retention (days)</label><input type="number" value={createWsForm.retentionInDays} onChange={(e) => setCreateWsForm(f => ({...f, retentionInDays: Number(e.target.value)}))} style={createWsInputStyle} /></div>
-                 </div>
-                 <div style={createWsBtnContainerStyle}>
-                   <button type="submit" disabled={creatingWs} style={createWsSubmitStyle}>{creatingWs ? "Tworzenie..." : "Utwórz workspace"}</button>
-                   <button type="button" onClick={() => setShowCreateWs(false)} style={createWsCancelStyle}>Anuluj</button>
-                 </div>
-               </form>}
+                  <div style={createWsGridStyle}>
+                    <div><label style={createWsLabelStyle}>Subscription ID</label><input value={createWsForm.subscriptionId} onChange={(e) => setCreateWsForm(f => ({...f, subscriptionId: e.target.value}))} required style={createWsInputStyle} /></div>
+                    <div><label style={createWsLabelStyle}>Resource Group</label><input value={createWsForm.rgName} onChange={(e) => setCreateWsForm(f => ({...f, rgName: e.target.value}))} required style={createWsInputStyle} /></div>
+                    <div><label style={createWsLabelStyle}>Workspace Name</label><input value={createWsForm.workspaceName} onChange={(e) => setCreateWsForm(f => ({...f, workspaceName: e.target.value}))} required style={createWsInputStyle} /></div>
+                    <div><label style={createWsLabelStyle}>Location</label><input value={createWsForm.location} onChange={(e) => setCreateWsForm(f => ({...f, location: e.target.value}))} style={createWsInputStyle} /></div>
+                    <div><label style={createWsLabelStyle}>SKU</label><input value={createWsForm.sku} onChange={(e) => setCreateWsForm(f => ({...f, sku: e.target.value}))} style={createWsInputStyle} /></div>
+                    <div><label style={createWsLabelStyle}>Retention (days)</label><input type="number" value={createWsForm.retentionInDays} onChange={(e) => setCreateWsForm(f => ({...f, retentionInDays: Number(e.target.value)}))} style={createWsInputStyle} /></div>
+                  </div>
+                  <div style={createWsBtnContainerStyle}>
+                    <button type="submit" disabled={creatingWs} style={createWsSubmitStyle}>{creatingWs ? "Tworzenie..." : "Utwórz workspace"}</button>
+                    <button type="button" onClick={() => setShowCreateWs(false)} style={createWsCancelStyle}>Anuluj</button>
+                  </div>
+                </form>}
 
               {linkedWorkspace && (
                 <>
                   <div style={{ marginTop: "30px" }}>
                     <h4>📄 Eksportuj logi z workspace</h4>
                     <div style={logQueryStyle}>
-                      <button onClick={() => handleExportLogs('logs')} style={exportButtonStyle}>
+                      <button onClick={() => handleExportLogs('container')} style={exportButtonStyle}>
                         Pobierz Logi (CSV)
                       </button>
                     </div>
@@ -329,14 +571,14 @@ const ContainerMonitor = () => {
                     </button>
 
                     {kqlLoading ? ( <p>⏳ Ładowanie wyników...</p> )
-                     : kqlError ? ( <p style={{ color: "red", marginTop: '10px' }}>❌ {kqlError}</p> )
-                     : kqlResults.length > 0 ? (
-                       <div style={{marginTop: '15px', overflowX: 'auto'}}>
-                         {renderKqlTable()}
-                       </div>
-                     ) : (
-                       !kqlError && <p style={{color: '#777', marginTop: '10px'}}>Kliknij "Wykonaj zapytanie", aby zobaczyć wyniki.</p>
-                     )}
+                      : kqlError ? ( <p style={{ color: "red", marginTop: '10px' }}>❌ {kqlError}</p> )
+                      : kqlResults.length > 0 ? (
+                        <div style={{marginTop: '15px', overflowX: 'auto'}}>
+                          {renderKqlTable()}
+                        </div>
+                      ) : (
+                        !kqlError && <p style={{color: '#777', marginTop: '10px'}}>Kliknij "Wykonaj zapytanie", aby zobaczyć wyniki.</p>
+                      )}
                   </div>
                 </>
               )}
@@ -346,11 +588,47 @@ const ContainerMonitor = () => {
           {activeTab === "alerts" && (
             <div style={{ marginTop: "10px" }}>
               <h3>🚨 Alerty dla {containerId}</h3>
-              <p>Funkcjonalność alertów dla kontenerów ACI do zaimplementowania.</p>
+              
+              {alertsLoading ? (
+                <p>⏳ Ładowanie alertów...</p>
+              ) : alertsError ? (
+                <p style={{ color: "red" }}>❌ {alertsError}</p>
+              ) : alerts.length > 0 ? (
+                <div style={{ marginTop: '15px' }}>
+                  {alerts.map((alert, index) => (
+                    <div key={index} style={alertBoxStyle}>
+                      <div>
+                        <strong style={alertTitleStyle}>
+                          {alert.name} 
+                          <span style={alert.enabled ? alertEnabledStyle : alertDisabledStyle}>
+                            ({alert.enabled ? 'Włączony' : 'Wyłączony'})
+                          </span>
+                        </strong>
+                        <p style={alertDescStyle}><strong>Opis:</strong> {alert.description || 'Brak'}</p>
+                        <p style={alertDescStyle}><strong>Poziom:</strong> Severity {alert.severity}</p>
+                      </div>
+                      {/* --- NOWY PRZYCISK USUWANIA --- */}
+                      <button 
+                        onClick={() => handleDeleteAlert(alert.name)} 
+                        style={alertDeleteButtonStyle}
+                      >
+                        🗑️ Usuń
+                      </button>
+                      {/* --------------------------- */}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{color: '#777', marginTop: '15px'}}>Brak skonfigurowanych alertów powiązanych z tym kontenerem.</p>
+              )}
+              
               <button 
-                onClick={() => setShowCreateAlertModal(true)} 
-                style={buttonStyle}
-                disabled={!containerInfo?.resourceId}
+                onClick={() => {
+                  setCreateAlertError(null); // Wyczyść błędy przy otwieraniu
+                  setShowCreateAlertModal(true);
+                }} 
+                style={{...buttonStyle, marginTop: '20px'}}
+                disabled={!containerInfo?.resourceId} // Przycisk jest wyłączony, dopóki dane kontenera się nie załadują
               >
                 ➕ Utwórz nową regułę alertu
               </button>
@@ -358,10 +636,14 @@ const ContainerMonitor = () => {
           )}
         </>
       )}
+
+      {/* --- RENDEROWANIE MODALA --- */}
+      {renderCreateAlertModal()}
     </div>
   );
 };
 
+// Style
 const btnStyle = { marginBottom: "20px", padding: "8px 16px", fontSize: "16px", background: "#0078D4", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
 const tabButtonStyle = { padding: "8px 16px", border: "none", borderRadius: "6px", cursor: "pointer"};
 const activeTabStyle = { background: "#0078D4", color: "white" };
@@ -391,5 +673,46 @@ const createWsLabelStyle = { fontSize: 13 };
 const createWsBtnContainerStyle = { marginTop: "12px", display: "flex", gap: "8px"};
 const createWsSubmitStyle = { padding: "8px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
 const createWsCancelStyle = { padding: "8px 12px", background: "#E2E8F0", color: "#111", border: "none", borderRadius: "6px", cursor: "pointer"};
+
+// --- Style dla Alertów ---
+const alertBoxStyle = { 
+  border: '1px solid #ddd', borderRadius: '6px', padding: '12px 16px', marginBottom: '10px', 
+  background: '#fdfdfd', display: 'flex', justifyContent: 'space-between', alignItems: 'center' // Zmienione na flex
+};
+const alertTitleStyle = { fontSize: '18px', color: '#004a99', display: 'block', marginBottom: '5px' };
+const alertDescStyle = { fontSize: '14px', margin: '4px 0', color: '#333' };
+const alertEnabledStyle = { fontSize: '14px', color: '#38A169', fontWeight: 'normal', marginLeft: '10px' };
+const alertDisabledStyle = { fontSize: '14px', color: '#E53E3E', fontWeight: 'normal', marginLeft: '10px' };
+const alertDeleteButtonStyle = {
+  padding: '6px 10px', background: '#E53E3E', color: 'white', border: 'none',
+  borderRadius: '6px', cursor: 'pointer', fontSize: '14px'
+};
+
+// --- Style dla Modala ---
+const modalBackdropStyle = {
+  position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+  background: 'rgba(0, 0, 0, 0.5)', display: 'flex',
+  justifyContent: 'center', alignItems: 'center', zIndex: 1000
+};
+const modalContentStyle = {
+  background: 'white', padding: '20px 30px', borderRadius: '8px',
+  width: '90%', maxWidth: '600px', boxSizing: 'border-box',
+  maxHeight: '90vh', overflowY: 'auto'
+};
+const modalTitleStyle = {
+  marginTop: 0, color: '#333'
+};
+const modalFormStyle = {
+  display: 'flex', flexDirection: 'column', gap: '10px'
+};
+const modalLabelStyle = {
+  fontWeight: 600, fontSize: '14px', color: '#444', marginBottom: '-5px'
+};
+const modalInputStyle = {
+  ...createWsInputStyle,
+  marginTop: 0,
+  fontSize: '15px'
+};
+// ------------------------------
 
 export default ContainerMonitor;

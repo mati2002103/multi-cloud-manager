@@ -14,8 +14,8 @@ from .storage import (
 
 )
 from .utils import api_user, api_subscriptions, logout, api_accounts
-from .alerts import create_metric_alert,list_alerts_for_vm,delete_alert_for_vm
-from .containermonitor import aci_monitor_metrics,get_aci_linked_workspace
+from .alerts import create_metric_alert,list_alerts_for_vm,delete_alert_for_vm,list_container_alerts,create_container_alert,delete_container_alert
+from .containermonitor import aci_monitor_metrics,get_aci_linked_workspace,export_aci_logs_csv,run_kql_query
 
 azure_bp_module = Blueprint("azure_module", __name__)
 
@@ -60,9 +60,17 @@ azure_bp_module.route("/api/vm/<vm_id>/metrics", methods=["POST"])(vm_az_monitor
 azure_bp_module.route("/api/vm/<vm_id>/agent-status", methods=["GET"])(agent_status)
 azure_bp_module.route("/api/vm/<vm_id>/ensure-ama", methods=["POST"])(ensure_ama)
 
-#container monitoring
+#container monitoring 
 azure_bp_module.route("/api/container/<container_group_name>/metrics", methods=["POST"])(aci_monitor_metrics)
 azure_bp_module.route("/api/container/<container_group_name>/linked_workspace", methods=["GET"])(get_aci_linked_workspace)
+azure_bp_module.route("/api/container/<container_group_name>/export_logs", methods=["GET"])(export_aci_logs_csv)
+azure_bp_module.route("/api/container/<container_group_name>/run_query", methods=["POST"])(run_kql_query)
+
+#container alerts 
+azure_bp_module.route("/api/container/<container_group_name>/container_alerts", methods=["GET"])(list_container_alerts)
+azure_bp_module.route("/api/container/<container_group_name>/create_container_alert", methods=["POST"])(create_container_alert)
+azure_bp_module.route("/api/container/<container_group_name>/delete_container_alert", methods=["DELETE"])(delete_container_alert)
+
 
 #log analytics
 azure_bp_module.route("/api/log_analytics", methods=["POST"])(create_log_analytics)

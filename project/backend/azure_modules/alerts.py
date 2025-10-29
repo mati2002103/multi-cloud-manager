@@ -12,7 +12,9 @@ from azure.mgmt.monitor.models import (
     MetricAlertSingleResourceMultipleMetricCriteria,
     MetricCriteria, 
     ActionGroupResource,
-    EmailReceiver
+    EmailReceiver,
+    MetricAlertAction
+    
 )
 
 CLIENT_ID = os.getenv("AZURE_CLIENT_ID")
@@ -173,3 +175,112 @@ def delete_alert_for_vm(vm_id, alert_name):
         return jsonify({"error": f"Azure API error: {str(e)}"}), e.status_code or 500
     except Exception as e:
         return jsonify({"error": f"Unexpected error: {str(e)}"}), 500
+    
+
+def list_container_alerts(container_group_name):
+    credential = FlaskCredential()
+    sub_id = request.args.get("sub_id")
+    rg_name = request.args.get("rg_name")
+    monitor_client = MonitorManagementClient(credential, sub_id)
+    
+    resource_id = f"/subscriptions/{sub_id}/resourceGroups/{rg_name}/providers/Microsoft.ContainerInstance/containerGroups/{container_group_name}"
+    alerts = monitor_client.metric_alerts.list_by_resource_group(rg_name)
+
+    linked_alerts = []
+    for alert in alerts:
+        if alert.scopes and resource_id in alert.scopes:
+            linked_alerts.append({
+                "name": alert.name,
+                "description": alert.description,
+                "enabled": alert.enabled,
+                "severity": alert.severity,
+                "criteria": str(alert.criteria),
+                "scopes": alert.scopes
+            })
+
+    return jsonify({"alerts": linked_alerts}), 200
+
+def create_container_alert(container_group_name):
+    data = request.get_json()
+    sub_id = data.get("subscriptionId")
+    rg_name = data.get("resourceGroup")
+    action_group_id = data.get("actionGroupId")  
+    threshold = data.get("threshold", 80)
+    metric_name = data.get("metricName", "CpuUsage")
+    operator = data.get("operator", "GreaterThan")
+    time_window = data.get("timeWindow", "PT5M")
+    evaluation_frequency = data.get("evaluationFrequency", "PT1M")
+
+    if not sub_id or not rg_name or not action_group_id:
+        return jsonify({"error": "Brakuje wymaganych parametrów: subscriptionId, resourceGroup, actionGroupId"}), 400
+
+    resource_id = f"/subscriptions/{sub_id}/resourceGroups/{rg_name}/providers/Microsoft.ContainerInstance/containerGroups/{container_group_name}"
+
+    try:
+        credential = FlaskCredential()
+        monitor_client = MonitorManagementClient(credential, sub_id)
+
+        alert_name = f"{container_group_name}-cpu-alert"
+        criteria = MetricAlertSingleResourceMultipleMetricCriteria(
+            all_of=[
+                MetricCriteria(
+                    name="HighCPU",
+                    metric_name=metric_name,
+                    operator=operator,
+                    time_aggregation="Average",
+                    threshold=threshold
+                )
+            ]
+        )
+
+        alert = MetricAlertResource(
+            location="global",
+            description=f"Alert for {metric_name} > {threshold}%",
+            severity=2,
+            enabled=True,
+            scopes=[resource_id],
+            evaluation_frequency=evaluation_frequency,
+            window_size=time_window,
+            criteria=criteria,
+            actions=[
+                MetricAlertAction(
+                    action_group_id=action_group_id
+                )
+            ]
+        )
+
+        result = monitor_client.metric_alerts.create_or_update(
+            resource_group_name=rg_name,
+            rule_name=alert_name,
+            parameters=alert
+        )
+
+        return jsonify({"message": "Alert utworzony pomyślnie.", "alertName": result.name}), 201
+
+    except Exception as e:
+        return jsonify({"error": f"Błąd podczas tworzenia alertu: {str(e)}"}), 500
+    
+
+
+def delete_container_alert(container_group_name):
+    data = request.get_json()
+    sub_id = data.get("subscriptionId")
+    rg_name = data.get("resourceGroup")
+    alert_name = data.get("alertName")
+
+    if not sub_id or not rg_name or not alert_name:
+        return jsonify({"error": "Brakuje wymaganych parametrów: subscriptionId, resourceGroup, alertName"}), 400
+
+    try:
+        credential = FlaskCredential()
+        monitor_client = MonitorManagementClient(credential, sub_id)
+
+        monitor_client.metric_alerts.delete(
+            resource_group_name=rg_name,
+            rule_name=alert_name
+        )
+
+        return jsonify({"message": f"Alert '{alert_name}' został usunięty."}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Błąd podczas usuwania alertu: {str(e)}"}), 500
