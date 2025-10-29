@@ -146,3 +146,30 @@ def create_metric_alert(vm_id):
         return jsonify({"error": f"Azure API error: {str(e)}"}), e.status_code or 500
     except Exception as e:
         return jsonify({"error": f"An unexpected error occurred: {str(e)}"}), 500
+
+def delete_alert_for_vm(vm_id, alert_name):
+    try:
+        credential = FlaskCredential()
+        vm_info = find_vm_by_name(vm_id, credential)
+        if not vm_info:
+            return jsonify({"error": f"VM '{vm_id}' not found"}), 404
+
+        subscription_id = vm_info.get("subscriptionId")
+        rg_name = vm_info.get("resourceGroup")
+
+        if not all([subscription_id, rg_name]):
+            return jsonify({"error": "Nie udało się pobrać informacji o VM (Sub, RG)."}), 500
+
+        monitor_client = MonitorManagementClient(credential, subscription_id)
+
+        monitor_client.metric_alerts.delete(
+            resource_group_name=rg_name,
+            rule_name=alert_name
+        )
+
+        return jsonify({"message": f"Alert '{alert_name}' został usunięty."}), 200
+
+    except HttpResponseError as e:
+        return jsonify({"error": f"Azure API error: {str(e)}"}), e.status_code or 500
+    except Exception as e:
+        return jsonify({"error": f"Unexpected error: {str(e)}"}), 500

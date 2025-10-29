@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import CreateContainerModal from "../components/CreateContainerModal";
 import CreateGCPContainerModal from "../components/CreateGCPContainerModal"; 
+import { useNavigate } from "react-router-dom";
 
 const Containers = () => {
   const [azureContainers, setAzureContainers] = useState([]);
@@ -13,6 +14,8 @@ const Containers = () => {
   const [gcpError, setGcpError] = useState(null);
   const [showGCPModal, setShowGCPModal] = useState(false); 
 
+  const navigate = useNavigate();
+  
   const fetchAzureContainers = async () => {
     setAzureLoading(true);
     setAzureError(null);
@@ -151,7 +154,12 @@ const Containers = () => {
                   <td style={cellStyle}>{container.location}</td>
                   <td style={cellStyle}>{container.status}</td>
                   <td style={cellStyle}>{container.image}</td>
-                  <td style={cellStyle}>🖥️</td>
+                  <td style={cellStyle}>
+                    <span style={{ cursor: "pointer" }} onClick={() => navigate(`/container/${container.name}/monitoring`)}>
+                      📈
+                    </span>
+                  </td>
+
                   <td style={cellStyle}>
                     <button onClick={() => handleRestartAzure(container)}>🔁</button>
                   </td>

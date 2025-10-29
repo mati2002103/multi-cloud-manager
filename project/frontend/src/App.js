@@ -8,6 +8,8 @@ import Subscriptions from "./pages/Subscriptions";
 import Accounts from "./pages/Accounts";
 import Networks from "./pages/Networks";
 import VMMonitor from "./pages/VmMonitor";
+import ContainerMonitor from "./pages/ContainerMonitor";
+
 import StorageBlobContainers from "./pages/StorageBlobContainers";
 import Storage from "./pages/Storage";
 import GCPBucketContents from "./pages/GCPBucketContents";
@@ -50,6 +52,7 @@ function App() {
                     <Route path="/networks" element={<Networks />} />
                     <Route path="/subscriptions" element={<Subscriptions />} />
                     <Route path="/accounts" element={<Accounts />} />
+                    <Route path="/container/:containerId/monitoring" element={<ContainerMonitor />} />
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
                     <Route path="/storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />

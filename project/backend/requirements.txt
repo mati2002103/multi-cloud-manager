@@ -13,6 +13,7 @@ azure-mgmt-monitor
 azure-mgmt-storage
 azure-mgmt-containerinstance
 azure-storage-blob
+azure-mgmt-resource
 azure-core
 flask_cors
 

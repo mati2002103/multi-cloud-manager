@@ -14,8 +14,8 @@ from .storage import (
 
 )
 from .utils import api_user, api_subscriptions, logout, api_accounts
-from .alerts import create_metric_alert,list_alerts_for_vm
-
+from .alerts import create_metric_alert,list_alerts_for_vm,delete_alert_for_vm
+from .containermonitor import aci_monitor_metrics,get_aci_linked_workspace
 
 azure_bp_module = Blueprint("azure_module", __name__)
 
@@ -60,6 +60,9 @@ azure_bp_module.route("/api/vm/<vm_id>/metrics", methods=["POST"])(vm_az_monitor
 azure_bp_module.route("/api/vm/<vm_id>/agent-status", methods=["GET"])(agent_status)
 azure_bp_module.route("/api/vm/<vm_id>/ensure-ama", methods=["POST"])(ensure_ama)
 
+#container monitoring
+azure_bp_module.route("/api/container/<container_group_name>/metrics", methods=["POST"])(aci_monitor_metrics)
+azure_bp_module.route("/api/container/<container_group_name>/linked_workspace", methods=["GET"])(get_aci_linked_workspace)
 
 #log analytics
 azure_bp_module.route("/api/log_analytics", methods=["POST"])(create_log_analytics)
@@ -88,6 +91,7 @@ azure_bp_module.route("/api/logout")(logout)
 #alerts
 azure_bp_module.route("/api/vm/<vm_id>/create-alert", methods=["POST"])(create_metric_alert)
 azure_bp_module.route("/api/vm/<vm_id>/list_alerts_for_vm", methods=["GET"])(list_alerts_for_vm)
+azure_bp_module.route("/api/vm/<vm_id>/alerts/<alert_name>", methods=["DELETE"])(delete_alert_for_vm)
 
 
 

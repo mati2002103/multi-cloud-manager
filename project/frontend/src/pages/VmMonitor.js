@@ -36,11 +36,16 @@ const VMMonitor = () => {
     location: "westeurope", sku: "PerGB2018", retentionInDays: 30,
   });
   const [showCreateDCRModal, setShowCreateDCRModal] = useState(false);
-  const [dcrCreating, setDcrCreating] = useState(false); // Ten stan jest nieużywany, ale nieszkodliwy
+  const [dcrCreating, setDcrCreating] = useState(false);
   const [dcrMessage, setDcrMessage] = useState(null);
 
   const [showCreateAlertModal, setShowCreateAlertModal] = useState(false);
   
+  // ZMIANA: Stany dla alertów
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState(null);
+
   const fetchDcrList = useCallback(async (currentWorkspaceId) => {
     const currentWorkspace = workspaces.find(ws => ws.workspaceGuid === currentWorkspaceId);
     if (!vmId || !currentWorkspace) {
@@ -64,6 +69,23 @@ const VMMonitor = () => {
       setDcrLoading(false);
     }
   }, [vmId, workspaces]);
+
+  // ZMIANA: Nowa funkcja do pobierania alertów
+  const fetchAlerts = useCallback(async () => {
+    if (!vmId) return;
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const res = await fetch(`/api/vm/${vmId}/list_alerts_for_vm`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd pobierania alertów");
+      setAlerts(data.value || []);
+    } catch (err) {
+      setAlertsError(err.message);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, [vmId]);
 
   useEffect(() => {
     setLoading(true);
@@ -139,6 +161,12 @@ const VMMonitor = () => {
     }
   }, [vmId, selectedWorkspaceId, workspaces, fetchDcrList]);
 
+  useEffect(() => {
+    if (activeTab === 'alerts') {
+      fetchAlerts();
+    }
+  }, [activeTab, fetchAlerts]);
+
   const createWorkspace = async (e) => {
     e.preventDefault();
     setCreatingWs(true);
@@ -167,7 +195,6 @@ const VMMonitor = () => {
     }
   };
   
-  // Ta funkcja jest nieużywana, ale zostawiamy ją (ostrzeżenie 'no-unused-vars' jest OK)
   const createDCRForVM = async () => {
     if (!selectedWorkspaceId || !vmInfo?.subscriptionId || !vmInfo?.resourceGroup || !vmInfo?.resourceId ) {
       alert("Brakuje danych do utworzenia DCR (Workspace, Subskrypcja, RG, VM ID, Lokalizacja)"); return;
@@ -267,6 +294,28 @@ const VMMonitor = () => {
     }
   };
 
+  const handleDeleteAlert = async (alertName) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć alert '${alertName}'?`)) return;
+    
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const res = await fetch(`/api/vm/${vmId}/alerts/${alertName}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania alertu");
+      alert(data.message || "Alert usunięty");
+      fetchAlerts(); 
+    } catch (err) {
+      setAlertsError(err.message);
+      alert("❌ " + err.message);
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
   const renderKqlTable = () => {
     if (kqlResults.length === 0) {
       return null;
@@ -302,7 +351,6 @@ const VMMonitor = () => {
       </ResponsiveContainer>
     </div>
   );
-
   const selectedMetricData = vmInfo?.metrics?.find((m) => m.name === selectedMetric);
 
   return (
@@ -312,6 +360,7 @@ const VMMonitor = () => {
       </button>
 
       <h1>Monitoring VM: {vmId}</h1>
+
       <ul style={{ fontSize: "16px", lineHeight: "1.6", listStyle: 'none', paddingLeft: 0 }}>
         <li><strong>Subscription ID:</strong> {vmInfo?.subscriptionId || "—"}</li>
         <li><strong>Resource Group:</strong> {vmInfo?.resourceGroup || "—"}</li>
@@ -468,25 +517,64 @@ const VMMonitor = () => {
             </div>
           )}
           {activeTab === "alerts" && (
-  <div style={{ marginTop: "10px" }}>
-    <h3>🚨 Alerty dla {vmId}</h3>
-    
-    <button 
-      onClick={() => setShowCreateAlertModal(true)} 
-      style={buttonStyle}
-    >
-      ➕ Utwórz nową regułę alertu
-    </button>
-    
-    <CreateMetricAlertModal
-      isOpen={showCreateAlertModal}
-      onClose={() => setShowCreateAlertModal(false)}
-      onCreated={() => { /* Tu dodaj fetchAlerts() */ }}
-      vmInfo={vmInfo}
-      vmId={vmId} 
-    />
-  </div>
-)}
+            <div style={{ marginTop: "10px" }}>
+              <h3>🚨 Alerty dla {vmId}</h3>
+              
+              <button 
+                onClick={() => setShowCreateAlertModal(true)} 
+                style={buttonStyle}
+              >
+                ➕ Utwórz nową regułę alertu
+              </button>
+              
+              <CreateMetricAlertModal
+                isOpen={showCreateAlertModal}
+                onClose={() => setShowCreateAlertModal(false)}
+                onCreated={fetchAlerts}
+                vmInfo={vmInfo}
+                vmId={vmId}
+              />
+              
+              <div style={{ marginTop: "20px" }}>
+                <h4>Istniejące reguły alertów dla tej VM</h4>
+                <button onClick={fetchAlerts} style={refreshDcrButtonStyle} disabled={alertsLoading}>
+                  {alertsLoading ? 'Odświeżanie...' : '🔄 Odśwież listę alertów'}
+                </button>
+                {alertsLoading ? ( <p>⏳ Ładowanie alertów...</p> )
+                 : alertsError ? ( <p style={{ color: "red" }}>❌ {alertsError}</p> )
+                 : alerts.length === 0 ? ( <p>Brak alertów metryk skonfigurowanych dla tej VM.</p> )
+                 : (
+                  <table style={logTableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={logThStyle}>Nazwa Alertu</th>
+                        <th style={logThStyle}>Opis</th>
+                        <th style={logThStyle}>Włączony</th>
+                        <th style={logThStyle}>Akcje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alerts.map((alert) => (
+                        <tr key={alert.name}>
+                          <td style={logTdStyle}>{alert.name}</td>
+                          <td style={logTdStyle}>{alert.description}</td>
+                          <td style={logTdStyle}>{alert.enabled ? '✅ Tak' : '❌ Nie'}</td>
+                          <td style={logTdStyle}>
+                            <button
+                              onClick={() => handleDeleteAlert(alert.name)}
+                              style={{...exportButtonStyle, background: '#E53E3E'}}
+                            >
+                              🗑️ Usuń
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                 )}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
