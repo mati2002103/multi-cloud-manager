@@ -94,6 +94,7 @@ def vm_az_monitor_metrics(vm_id):
             "vm": vm_id,
             "subscriptionId": vm_info.get("subscriptionId", "N/A"),
             "resourceGroup": vm_info.get("resourceGroup", "N/A"),
+            "location": vm_info.get("location","N/A"),
             "resourceId": resource_id,
             "metrics": metrics_data
         }), 200

@@ -1,10 +1,12 @@
-from flask import jsonify, request, session,send_file
+from flask import jsonify, request, session, send_file
 from .utils import FlaskCredential
 from io import BytesIO
+from datetime import datetime, timedelta  # <-- DODANO
 
 from azure.mgmt.subscription import SubscriptionClient
 from azure.mgmt.storage import StorageManagementClient
 from azure.mgmt.resource import ResourceManagementClient
+from azure.mgmt.monitor import MonitorManagementClient  # <-- DODANO
 from azure.storage.blob import BlobServiceClient
 
 from enum import Enum
@@ -29,7 +31,6 @@ def classify_storage_type(kind: str) -> StorageType:
         return StorageType.UNKNOWN
 
 
-
 def list_storage_accounts():
     
     if "access_token" not in session:
@@ -42,23 +43,87 @@ def list_storage_accounts():
     try:
         for sub in sub_client.subscriptions.list():
             subscription_id = sub.subscription_id
-            storage_acc_client = StorageManagementClient(credential, subscription_id,api_version="2025-06-01")
+            
+            # --- ZMIANY W TEJ SEKCJI ---
+            
+            # 1. Poprawiona wersja API na działającą
+            storage_acc_client = StorageManagementClient(credential, subscription_id, api_version="2025-06-01")
+            
             resource_client = ResourceManagementClient(credential, subscription_id)
+            
+            # 2. Dodany klient monitorowania do pobierania metryk (Użycia)
+            monitor_client = MonitorManagementClient(credential, subscription_id)
+            
+            # --- KONIEC ZMIAN ---
+            
             for rg in resource_client.resource_groups.list():
                     accounts = storage_acc_client.storage_accounts.list_by_resource_group(rg.name)
                     for acc in accounts:
                         keys = storage_acc_client.storage_accounts.list_keys(rg.name, acc.name)
                         props = storage_acc_client.storage_accounts.get_properties(rg.name, acc.name)
+
+                        # --- NOWA LOGIKA POBIERANIA UŻYCIA ---
+                        usage_str = "N/A"
+                        try:
+                            # Zapytanie o metrykę UsedCapacity z ostatniego dnia
+                            metric_result = monitor_client.metrics.list(
+                                resource_uri=props.id,  # Używamy ID z obiektu 'props'
+                                timespan=f"{datetime.utcnow() - timedelta(days=1)}/{datetime.utcnow()}",
+                                interval="PT1H",
+                                metricnames="UsedCapacity",
+                                aggregation="Average"
+                            )
+                            # Bezpieczne sprawdzanie danych
+                            if metric_result.value and len(metric_result.value) > 0:
+                                timeseries = metric_result.value[0].timeseries
+                                # Sprawdź, czy istnieje seria czasowa
+                                if timeseries and len(timeseries) > 0:
+                                    data = timeseries[0].data
+                                    # Sprawdź, czy są jakiekolwiek punkty danych
+                                    if data and len(data) > 0:
+                                        # Bezpiecznie pobierz ostatnią wartość 'average'
+                                        last_data_point = data[-1]
+                                        capacity_bytes = last_data_point.average
+                                        
+                                        if capacity_bytes is not None:
+                                            # Formatowanie
+                                            if capacity_bytes == 0:
+                                                usage_str = "0 Bytes"
+                                            elif capacity_bytes > (1024**4): # TB
+                                                usage_str = f"{capacity_bytes / (1024**4):.2f} TiB"
+                                            elif capacity_bytes > (1024**3): # GB
+                                                usage_str = f"{capacity_bytes / (1024**3):.2f} GiB"
+                                            elif capacity_bytes > (1024**2): # MB
+                                                usage_str = f"{capacity_bytes / (1024**2):.2f} MiB"
+                                            else:
+                                                usage_str = f"{capacity_bytes:.0f} Bytes"
+                                        else:
+                                            usage_str = "N/A (no data)"
+                                    else:
+                                        usage_str = "N/A (no data)" 
+                                else:
+                                    usage_str = "N/A (no series)" 
+                            else:
+                                usage_str = "N/A (no value)" 
+                        except Exception as e:
+                            print(f"[ERROR] Metryka dla {acc.name} ({props.id}): {e}")
+                            usage_str = f"Error: {str(e)}"
+                                                
+
                         items.append({
                             "name": acc.name,
                             "resourceGroup": rg.name,
                             "location": acc.location,
                             "Keys": keys.keys[0].value,
                             "sku": props.sku.name,
-                            "accessTier": props.access_tier,
-                            "storageType": classify_storage_type(props.kind).value,
+                            "accessTier": props.access_tier,  # To już tu było
+                            "storageType": classify_storage_type(props.kind).value,  # To już tu było
                             "httpsOnly": props.enable_https_traffic_only,
-                            "subscriptionId": subscription_id
+                            "subscriptionId": subscription_id,
+                            
+                            # --- NOWE POLA DODANE DO ODPOWIEDZI ---
+                            "usage": usage_str,
+                            "publicAccess": "Włączony" if props.allow_blob_public_access else "Wyłączony"
                         })
 
         return jsonify({"value": items})
@@ -69,7 +134,6 @@ def create_storage_account():
     if "access_token" not in session:
         return jsonify({"error": "Unauthorized"}), 401
     
-
     data = request.get_json()
     subscription_id = data.get("subscriptionId")
     rg_name = data.get("rgName")
@@ -101,7 +165,7 @@ def create_storage_account():
         }), 200
 
     except Exception as e:
-        return jsonify({"error": str(e)}), 500       
+        return jsonify({"error": str(e)}), 500      
 
 def delete_storage_account():
     if "access_token" not in session:
@@ -284,6 +348,3 @@ def delete_blob(storage_account_id):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     pass
-
-
-

@@ -2,7 +2,7 @@ import React from "react";
 
 const Home = () => {
   const handleLogin = () => {
-    window.location.href = "http://localhost:5000/api/login"; 
+    window.location.href = "http://localhost:5000/api/login/azure"; 
   };
 
   return (

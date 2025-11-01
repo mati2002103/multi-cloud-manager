@@ -1,15 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
+import CreateDCRAssociationModal from "../components/CreateDCRAssociationModal";
+import CreateMetricAlertModal from "../components/CreateMetricAlertModal";
 
 const VMMonitor = () => {
   const { vmId } = useParams();
@@ -24,10 +19,12 @@ const VMMonitor = () => {
   const [dcrList, setDcrList] = useState([]);
   const [dcrLoading, setDcrLoading] = useState(false);
   const [dcrError, setDcrError] = useState(null);
-  const [logRows, setLogRows] = useState([]);
-  const [logType, setLogType] = useState("heartbeat");
 
-  // Log Analytics / workspace state
+  const [kqlQuery, setKqlQuery] = useState(`Heartbeat | where Computer == '${vmId}' | top 10 by TimeGenerated desc`);
+  const [kqlResults, setKqlResults] = useState([]);
+  const [kqlLoading, setKqlLoading] = useState(false);
+  const [kqlError, setKqlError] = useState(null);
+
   const [workspaces, setWorkspaces] = useState([]);
   const [wsLoading, setWsLoading] = useState(false);
   const [wsError, setWsError] = useState(null);
@@ -35,44 +32,65 @@ const VMMonitor = () => {
   const [showCreateWs, setShowCreateWs] = useState(false);
   const [creatingWs, setCreatingWs] = useState(false);
   const [createWsForm, setCreateWsForm] = useState({
-    subscriptionId: "",
-    rgName: "",
-    workspaceName: "",
-    location: "westeurope",
-    sku: "PerGB2018",
-    retentionInDays: 30,
+    subscriptionId: "", rgName: "", workspaceName: "",
+    location: "westeurope", sku: "PerGB2018", retentionInDays: 30,
   });
+  const [showCreateDCRModal, setShowCreateDCRModal] = useState(false);
   const [dcrCreating, setDcrCreating] = useState(false);
   const [dcrMessage, setDcrMessage] = useState(null);
 
-  const fetchDcrList = async () => {
-    if (!vmInfo?.subscriptionId || !vmInfo?.resourceGroup) return;
+  const [showCreateAlertModal, setShowCreateAlertModal] = useState(false);
+  
+  // ZMIANA: Stany dla alertów
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(false);
+  const [alertsError, setAlertsError] = useState(null);
+
+  const fetchDcrList = useCallback(async (currentWorkspaceId) => {
+    const currentWorkspace = workspaces.find(ws => ws.workspaceGuid === currentWorkspaceId);
+    if (!vmId || !currentWorkspace) {
+        setDcrList([]);
+        return;
+    }
     setDcrLoading(true);
     setDcrError(null);
     try {
       const res = await fetch(
-        `/api/dcr_list?subscriptionId=${vmInfo.subscriptionId}&rgName=${vmInfo.resourceGroup}`,
-        {
-          credentials: "include",
-        }
+        `/api/${vmId}/dcr_list?workspaceId=${encodeURIComponent(currentWorkspace.id)}`,
+        { credentials: "include" }
       );
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Błąd pobierania DCR");
+      if (!res.ok) throw new Error(data.error || "Błąd pobierania skojarzonych DCR");
       setDcrList(data.value || []);
     } catch (err) {
       setDcrError(err.message);
+      setDcrList([]);
     } finally {
       setDcrLoading(false);
     }
-  };
+  }, [vmId, workspaces]);
 
-  // fetch VM metrics and basic info
+  // ZMIANA: Nowa funkcja do pobierania alertów
+  const fetchAlerts = useCallback(async () => {
+    if (!vmId) return;
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const res = await fetch(`/api/vm/${vmId}/list_alerts_for_vm`, { credentials: "include" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd pobierania alertów");
+      setAlerts(data.value || []);
+    } catch (err) {
+      setAlertsError(err.message);
+    } finally {
+      setAlertsLoading(false);
+    }
+  }, [vmId]);
+
   useEffect(() => {
     setLoading(true);
     fetch(`/api/vm/${vmId}/metrics`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}),
     })
       .then((res) => {
         if (!res.ok) throw new Error(`Server error: ${res.status}`);
@@ -80,9 +98,7 @@ const VMMonitor = () => {
       })
       .then((data) => {
         setVmInfo(data);
-        if (data.metrics?.length > 0) {
-          setSelectedMetric(data.metrics[0].name);
-        }
+        if (data.metrics?.length > 0) setSelectedMetric(data.metrics[0].name);
         setLoading(false);
       })
       .catch((err) => {
@@ -92,56 +108,33 @@ const VMMonitor = () => {
       });
   }, [vmId]);
 
-  // fetch agent status
   useEffect(() => {
-    fetch(`/api/vm/${vmId}/agent-status`, {
-      credentials: "include",
-    })
+    fetch(`/api/vm/${vmId}/agent-status`, { credentials: "include" })
       .then((res) => res.json())
       .then((data) => {
-        if (data.hasAMA_Linux || data.hasAMA_Windows) {
-          setAgentStatus("✅ AMA");
-        } else if (data.hasMMA) {
-          setAgentStatus("⚠️ MMA");
-        } else {
-          setAgentStatus("❌ Brak");
-        }
+        if (data.hasAMA_Linux || data.hasAMA_Windows) setAgentStatus("✅ AMA");
+        else if (data.hasMMA) setAgentStatus("⚠️ MMA");
+        else setAgentStatus("❌ Brak");
       })
       .catch(() => setAgentStatus("⏳"));
   }, [vmId]);
 
-  // fetch workspaces for a subscription (if vmInfo has subscriptionId, auto-fetch)
-  useEffect(() => {
-    if (vmInfo?.subscriptionId) {
-      fetchWorkspaces(vmInfo.subscriptionId);
-      setCreateWsForm((f) => ({ ...f, subscriptionId: vmInfo.subscriptionId }));
-    }
-  }, [vmInfo?.subscriptionId]);
-
-  //fetch dcr
-  useEffect(() => {
-    if (vmInfo?.subscriptionId && vmInfo?.resourceGroup) {
-      fetchDcrList(vmInfo.subscriptionId, vmInfo.resourceGroup);
-    }
-  }, [vmInfo?.subscriptionId]);
-
-  const fetchWorkspaces = async (subscriptionId) => {
+  const fetchWorkspaces = useCallback(async (subscriptionId) => {
     setWsLoading(true);
     setWsError(null);
     try {
       const res = await fetch(
-        `/api/log_analytics?subscriptionId=${subscriptionId}&rgName=${vmInfo.resourceGroup}`,
-        {
-          credentials: "include",
-        }
+        `/api/log_analytics?subscriptionId=${subscriptionId}`,
+        { credentials: "include" }
       );
-
       const data = await res.json();
-      if (!res.ok)
-        throw new Error(data.error || "Błąd pobierania workspace'ów");
-      setWorkspaces(data.value || []);
-      if (!selectedWorkspaceId && (data.value || []).length > 0) {
-        setSelectedWorkspaceId(data.value[0].id);
+      if (!res.ok) throw new Error(data.error || "Błąd pobierania workspace'ów");
+      const fetchedWorkspaces = data.value || [];
+      setWorkspaces(fetchedWorkspaces);
+      if (!selectedWorkspaceId && fetchedWorkspaces.length > 0) {
+        setSelectedWorkspaceId(fetchedWorkspaces[0].workspaceGuid);
+      } else if (fetchedWorkspaces.length === 0) {
+        setSelectedWorkspaceId("");
       }
     } catch (err) {
       console.error("fetchWorkspaces:", err);
@@ -149,30 +142,50 @@ const VMMonitor = () => {
     } finally {
       setWsLoading(false);
     }
-  };
+  }, [selectedWorkspaceId]);
+
+  useEffect(() => {
+    if (vmInfo?.subscriptionId) {
+      fetchWorkspaces(vmInfo.subscriptionId);
+       if (vmInfo?.resourceGroup) {
+         setCreateWsForm((f) => ({ ...f, subscriptionId: vmInfo.subscriptionId, rgName: vmInfo.resourceGroup }));
+       }
+    }
+  }, [vmInfo?.subscriptionId, vmInfo?.resourceGroup, fetchWorkspaces]);
+
+  useEffect(() => {
+    if (vmId && selectedWorkspaceId) {
+      fetchDcrList(selectedWorkspaceId);
+    } else {
+      setDcrList([]);
+    }
+  }, [vmId, selectedWorkspaceId, workspaces, fetchDcrList]);
+
+  useEffect(() => {
+    if (activeTab === 'alerts') {
+      fetchAlerts();
+    }
+  }, [activeTab, fetchAlerts]);
+
   const createWorkspace = async (e) => {
     e.preventDefault();
     setCreatingWs(true);
     try {
       const payload = {
-        subscriptionId: createWsForm.subscriptionId,
-        rgName: createWsForm.rgName,
-        workspaceName: createWsForm.workspaceName,
-        location: createWsForm.location,
-        sku: createWsForm.sku,
-        retentionInDays: createWsForm.retentionInDays,
+        subscriptionId: createWsForm.subscriptionId, rgName: createWsForm.rgName,
+        workspaceName: createWsForm.workspaceName, location: createWsForm.location,
+        sku: createWsForm.sku, retentionInDays: createWsForm.retentionInDays,
       };
       const res = await fetch("/api/log_analytics", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd tworzenia workspace");
-      // refresh list and select created workspace (response may return workspace.id)
       await fetchWorkspaces(createWsForm.subscriptionId);
-      if (data.workspace?.id) setSelectedWorkspaceId(data.workspace.id);
+      if (data.workspace?.workspaceGuid) {
+        setSelectedWorkspaceId(data.workspace.workspaceGuid);
+      }
       setShowCreateWs(false);
       alert(data.message || "Workspace utworzony");
     } catch (err) {
@@ -181,601 +194,422 @@ const VMMonitor = () => {
       setCreatingWs(false);
     }
   };
+  
   const createDCRForVM = async () => {
-    if (
-      !selectedWorkspaceId ||
-      !vmInfo?.subscriptionId ||
-      !vmInfo?.resourceGroup ||
-      !vmInfo?.resourceId
-    ) {
-      alert("Brakuje danych do utworzenia DCR");
-      return;
+    if (!selectedWorkspaceId || !vmInfo?.subscriptionId || !vmInfo?.resourceGroup || !vmInfo?.resourceId ) {
+      alert("Brakuje danych do utworzenia DCR (Workspace, Subskrypcja, RG, VM ID, Lokalizacja)"); return;
     }
-
-    if (!window.confirm("Utworzyć DCR i przypisać do tej VM?")) return;
-
-    setDcrCreating(true);
-    setDcrMessage(null);
-
+    if (!window.confirm("Utworzyć nowy DCR dla tej VM, wysyłający dane do wybranego Workspace, i przypisać go?")) return;
+    setDcrCreating(true); setDcrMessage(null);
     try {
       const payload = {
-        subscriptionId: vmInfo.subscriptionId,
-        resourceGroup: vmInfo.resourceGroup,
-        workspaceId: selectedWorkspaceId,
+        subscriptionId: vmInfo.subscriptionId, resourceGroup: vmInfo.resourceGroup,
+        workspaceId: workspaces.find(ws => ws.workspaceGuid === selectedWorkspaceId)?.id,
         vmResourceId: vmInfo.resourceId,
+        location: vmInfo.location,
+        dcrName: `dcr-${vmId}-${workspaces.find(ws => ws.workspaceGuid === selectedWorkspaceId)?.name || 'default'}`,
+        collectPerformance: true,
+        collectSystemLogs: true,
       };
-
-      const res = await fetch("/api/dcr_create", {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
+      
+      const res = await fetch("/api/create_dcr_and_associate_for_vm", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd tworzenia DCR");
-
-      setDcrMessage(data.message || "DCR utworzony");
-      alert(data.message || "DCR utworzony");
-
-      // odśwież listę DCR
-      fetchDcrList(vmInfo.subscriptionId, vmInfo.resourceGroup);
+      setDcrMessage(data.message || "DCR utworzony i przypisany");
+      alert(data.message || "DCR utworzony i przypisany");
+      fetchDcrList(selectedWorkspaceId);
     } catch (err) {
-      alert("❌ " + err.message);
-      setDcrMessage("Błąd: " + err.message);
+      alert("❌ " + err.message); setDcrMessage("Błąd: " + err.message);
     } finally {
       setDcrCreating(false);
-    }
-  };
-
-  const fetchLogsBasic = async () => {
-    if (!selectedWorkspaceId) {
-      alert("Brak workspaceId");
-      return;
-    }
-
-    setLogRows([]);
-    try {
-      const res = await fetch(
-        `/api/logs_basic?workspaceId=${encodeURIComponent(
-          selectedWorkspaceId
-        )}&queryType=${logType}`,
-        { method: "GET", credentials: "include" }
-      );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Błąd pobierania logów");
-      setLogRows(data.value || []);
-    } catch (err) {
-      alert("❌ " + err.message);
     }
   };
 
   const installAMA = async () => {
     if (!window.confirm(`Zainstalować AMA na VM "${vmId}"?`)) return;
     try {
-      const res = await fetch(`/api/vm/${vmId}/ensure-ama`, {
-        method: "POST",
-        credentials: "include",
-      });
+      const res = await fetch(`/api/vm/${vmId}/ensure-ama`, { method: "POST", credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd instalacji AMA");
-      alert(data.message);
-      setAgentStatus("✅ AMA");
+      alert(data.message); setAgentStatus("✅ AMA");
     } catch (err) {
       alert("❌ " + err.message);
     }
   };
 
+  const handleExportLogs = (type) => {
+    if (!selectedWorkspaceId) { alert("Wybierz Log Analytics Workspace."); return; }
+    if (!vmId){ alert("Brakuje ID maszyny wirtualnej."); return; }
+    
+    const backendUrl = "http://localhost:5000";
+    const downloadUrl = `${backendUrl}/api/vm/${vmId}/logs/export?type=${type}&workspaceGuid=${encodeURIComponent(selectedWorkspaceId)}`;
+    
+    console.log("Attempting to download from ABSOLUTE URL:", downloadUrl);
+
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.setAttribute('download', `${vmId}_${type}_logs.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleKqlQuerySubmit = async () => {
+    if (!selectedWorkspaceId) {
+      setKqlError("Wybierz Log Analytics Workspace.");
+      return;
+    }
+    if (!kqlQuery) {
+      setKqlError("Zapytanie KQL nie może być puste.");
+      return;
+    }
+    
+    setKqlLoading(true);
+    setKqlError(null);
+    setKqlResults([]);
+
+    try {
+      const res = await fetch(`/api/vm/${vmId}/logs/query`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workspaceGuid: selectedWorkspaceId,
+          kqlQuery: kqlQuery
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd zapytania KQL");
+      setKqlResults(data.value || []);
+      if (!data.value || data.value.length === 0) {
+        setKqlError("Zapytanie nie zwróciło żadnych danych.");
+      }
+    } catch (err) {
+      setKqlError(err.message);
+    } finally {
+      setKqlLoading(false);
+    }
+  };
+
+  const handleDeleteAlert = async (alertName) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć alert '${alertName}'?`)) return;
+    
+    setAlertsLoading(true);
+    setAlertsError(null);
+    try {
+      const res = await fetch(`/api/vm/${vmId}/alerts/${alertName}`, {
+        method: "DELETE",
+        credentials: "include"
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania alertu");
+      alert(data.message || "Alert usunięty");
+      fetchAlerts(); 
+    } catch (err) {
+      setAlertsError(err.message);
+      alert("❌ " + err.message);
+    } finally {
+      setAlertsLoading(false);
+    }
+  };
+
+  const renderKqlTable = () => {
+    if (kqlResults.length === 0) {
+      return null;
+    }
+    const headers = Object.keys(kqlResults[0]);
+    return (
+      <table style={logTableStyle}>
+        <thead>
+          <tr>
+            {headers.map(key => <th key={key} style={logThStyle}>{key}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {kqlResults.map((row, idx) => (
+            <tr key={idx}>
+              {headers.map(header => <td key={`${idx}-${header}`} style={logTdStyle}>{String(row[header])}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
+  };
+
   const renderChart = (metric) => (
     <div key={metric.name} style={{ marginBottom: "40px" }}>
-      <h3>
-        {metric.name} ({metric.unit})
-      </h3>
+      <h3>{metric.name} ({metric.unit})</h3>
       <ResponsiveContainer width="100%" height={300}>
         <LineChart data={metric.data}>
-          <CartesianGrid strokeDasharray="3 3" />
-          <XAxis dataKey="timestamp" />
-          <YAxis />
-          <Tooltip />
-          <Legend />
-          <Line
-            type="monotone"
-            dataKey="average"
-            stroke="#0078D4"
-            dot={false}
-          />
+          <CartesianGrid strokeDasharray="3 3" /><XAxis dataKey="timestamp" /><YAxis />
+          <Tooltip /><Legend />
+          <Line type="monotone" dataKey="average" stroke="#0078D4" dot={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
-
-  const selectedMetricData = vmInfo?.metrics?.find(
-    (m) => m.name === selectedMetric
-  );
+  const selectedMetricData = vmInfo?.metrics?.find((m) => m.name === selectedMetric);
 
   return (
     <div style={{ padding: "20px", maxWidth: "980px", margin: "0 auto" }}>
-      <button
-        onClick={() => navigate("/virtual-machines")}
-        style={{
-          marginBottom: "20px",
-          padding: "8px 16px",
-          fontSize: "16px",
-          background: "#0078D4",
-          color: "white",
-          border: "none",
-          borderRadius: "6px",
-        }}
-      >
+      <button onClick={() => navigate("/virtual-machines")} style={btnStyle}>
         ← Powrót
       </button>
 
       <h1>Monitoring VM: {vmId}</h1>
 
-      <ul style={{ fontSize: "16px", lineHeight: "1.6" }}>
-        <li>
-          <strong>Subscription ID:</strong> {vmInfo?.subscriptionId || "—"}
-        </li>
-        <li>
-          <strong>Resource Group:</strong> {vmInfo?.resourceGroup || "—"}
-        </li>
-        <li>
-          <strong>Resource ID:</strong> {vmInfo?.resourceId || "—"}
-        </li>
+      <ul style={{ fontSize: "16px", lineHeight: "1.6", listStyle: 'none', paddingLeft: 0 }}>
+        <li><strong>Subscription ID:</strong> {vmInfo?.subscriptionId || "—"}</li>
+        <li><strong>Resource Group:</strong> {vmInfo?.resourceGroup || "—"}</li>
+        <li><strong>Resource ID:</strong> {vmInfo?.resourceId || "—"}</li>
+        <li><strong>Lokalizacja:</strong> {vmInfo?.location || "—"}</li>
         <li>
           <strong>Status agenta:</strong> {agentStatus}
-          {agentStatus === "❌ Brak" && (
-            <button
-              onClick={installAMA}
-              style={{
-                marginLeft: "10px",
-                padding: "6px 12px",
-                background: "#0078D4",
-                color: "white",
-                border: "none",
-                borderRadius: "4px",
-                cursor: "pointer",
-              }}
-            >
-              🔧 Zainstaluj AMA
-            </button>
-          )}
+          {agentStatus === "❌ Brak" && <button onClick={installAMA} style={installButtonStyle}>🔧 Zainstaluj AMA</button>}
         </li>
       </ul>
 
       <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-        <button
-          onClick={() => setActiveTab("azureMonitor")}
-          style={{
-            padding: "8px 16px",
-            background: activeTab === "azureMonitor" ? "#0078D4" : "#eee",
-            color: activeTab === "azureMonitor" ? "white" : "#333",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-          }}
-        >
+        <button onClick={() => setActiveTab("azureMonitor")} style={{...tabButtonStyle, ...(activeTab === 'azureMonitor' ? activeTabStyle : inactiveTabStyle)}}>
           📊 Azure Monitor Metrics
         </button>
-        <button
-          onClick={() => setActiveTab("logAnalytics")}
-          style={{
-            padding: "8px 16px",
-            background: activeTab === "logAnalytics" ? "#0078D4" : "#eee",
-            color: activeTab === "logAnalytics" ? "white" : "#333",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-          }}
-        >
+        <button onClick={() => setActiveTab("logAnalytics")} style={{...tabButtonStyle, ...(activeTab === 'logAnalytics' ? activeTabStyle : inactiveTabStyle)}}>
           📁 Log Analytics + KQL
         </button>
+        <button
+        onClick={() => setActiveTab("alerts")}
+        style={{...tabButtonStyle, ...(activeTab === 'alerts' ? activeTabStyle : inactiveTabStyle)}}>
+        🚨 Alerty
+      </button>
       </div>
 
-      {loading ? (
-        <p>⏳ Ładowanie danych...</p>
-      ) : vmInfo?.error ? (
-        <p style={{ color: "red" }}>❌ {vmInfo.error}</p>
-      ) : (
+      {loading ? ( <p>⏳ Ładowanie danych...</p> )
+       : vmInfo?.error ? ( <p style={{ color: "red" }}>❌ {vmInfo.error}</p> )
+       : (
         <>
           {activeTab === "azureMonitor" && (
             <>
               {vmInfo.metrics?.length > 0 ? (
                 <>
-                  <div
-                    style={{
-                      marginBottom: "20px",
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "10px",
-                    }}
-                  >
+                  <div style={{ marginBottom: "20px", display: "flex", flexWrap: "wrap", gap: "10px" }}>
                     {vmInfo.metrics.map((metric) => (
-                      <button
-                        key={metric.name}
-                        onClick={() => setSelectedMetric(metric.name)}
-                        style={{
-                          padding: "6px 12px",
-                          background:
-                            selectedMetric === metric.name ? "#0078D4" : "#eee",
-                          color:
-                            selectedMetric === metric.name ? "white" : "#333",
-                          border: "none",
-                          borderRadius: "4px",
-                          cursor: "pointer",
-                        }}
-                      >
+                      <button key={metric.name} onClick={() => setSelectedMetric(metric.name)}
+                        style={{...metricButtonStyle, ...(selectedMetric === metric.name ? activeMetricStyle : inactiveMetricStyle)}}>
                         {metric.name}
                       </button>
                     ))}
                   </div>
-
-                  {selectedMetricData ? (
-                    renderChart(selectedMetricData)
-                  ) : (
-                    <p>Brak danych dla wybranej metryki.</p>
-                  )}
+                  {selectedMetricData ? renderChart(selectedMetricData) : <p>Brak danych dla wybranej metryki.</p>}
                 </>
-              ) : (
-                <p>Brak dostępnych metryk.</p>
-              )}
+              ) : ( <p>Brak dostępnych metryk.</p> )}
             </>
           )}
 
           {activeTab === "logAnalytics" && (
             <div style={{ marginTop: "10px" }}>
               <h3>📁 Log Analytics + KQL</h3>
-
-              <div
-                style={{
-                  margin: "12px 0",
-                  display: "flex",
-                  gap: "8px",
-                  alignItems: "center",
-                }}
-              >
+              <div style={{ margin: "12px 0", display: "flex", gap: "8px", alignItems: "center", flexWrap: 'wrap' }}>
                 <label style={{ fontWeight: 600 }}>Workspace:</label>
-                {wsLoading ? (
-                  <span>⏳ Ładowanie workspace'ów...</span>
-                ) : wsError ? (
-                  <span style={{ color: "red" }}>❌ {wsError}</span>
-                ) : workspaces.length === 0 ? (
-                  <span>Brak workspace'ów w subskrypcji</span>
-                ) : (
-                  <select
-                    value={selectedWorkspaceId}
-                    onChange={(e) => setSelectedWorkspaceId(e.target.value)}
-                    style={{ padding: "6px", borderRadius: "4px" }}
-                  >
-                    {workspaces.map((ws) => (
-                      <option key={ws.id} value={ws.id}>
-                        {ws.name} — {ws.location}
-                      </option>
-                    ))}
+                {wsLoading ? ( <span>⏳ Ładowanie...</span> )
+                 : wsError ? ( <span style={{ color: "red" }}>❌ {wsError}</span> )
+                 : workspaces.length === 0 ? ( <span>Brak workspace'ów</span> )
+                 : (
+                  <select value={selectedWorkspaceId} onChange={(e) => setSelectedWorkspaceId(e.target.value)} style={wsSelectStyle}>
+                    <option value="">-- Wybierz Workspace --</option>
+                    {workspaces.map((ws) => ( <option key={ws.id} value={ws.workspaceGuid}>{ws.name} — {ws.location} ({ws.resourceGroup})</option> ))}
                   </select>
-                )}
-
-                <button
-                  onClick={() => setShowCreateWs((s) => !s)}
-                  style={{
-                    marginLeft: "8px",
-                    padding: "6px 10px",
-                    background: "#6B46C1",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                  }}
-                >
+                 )}
+                <button onClick={() => setShowCreateWs((s) => !s)} style={createWsButtonStyle}>
                   {showCreateWs ? "✖ Anuluj" : "➕ Nowy workspace"}
                 </button>
-
-                <button
-                  onClick={createDCRForVM}
-                  disabled={dcrCreating}
-                  style={{
-                    marginLeft: "12px",
-                    padding: "6px 10px",
-                    background: "#2D3748",
-                    color: "white",
-                    border: "none",
-                    borderRadius: "6px",
-                    cursor: "pointer",
-                  }}
-                >
-                  {dcrCreating ? "Tworzenie DCR..." : "Utwórz i przypisz DCR"}
-                </button>
-                {dcrMessage && (
-                  <p style={{ marginTop: "10px", color: "#2D3748" }}>
-                    {dcrMessage}
-                  </p>
-                )}
               </div>
 
-              {dcrMessage && <p style={{ color: "#2D3748" }}>{dcrMessage}</p>}
+              {showCreateWs && <form onSubmit={createWorkspace} style={createWsFormStyle}>
+                 <div style={createWsGridStyle}>
+                   <div><label style={createWsLabelStyle}>Subscription ID</label><input value={createWsForm.subscriptionId} onChange={(e) => setCreateWsForm(f => ({...f, subscriptionId: e.target.value}))} required style={createWsInputStyle} /></div>
+                   <div><label style={createWsLabelStyle}>Resource Group</label><input value={createWsForm.rgName} onChange={(e) => setCreateWsForm(f => ({...f, rgName: e.target.value}))} required style={createWsInputStyle} /></div>
+                   <div><label style={createWsLabelStyle}>Workspace Name</label><input value={createWsForm.workspaceName} onChange={(e) => setCreateWsForm(f => ({...f, workspaceName: e.target.value}))} required style={createWsInputStyle} /></div>
+                   <div><label style={createWsLabelStyle}>Location</label><input value={createWsForm.location} onChange={(e) => setCreateWsForm(f => ({...f, location: e.target.value}))} style={createWsInputStyle} /></div>
+                   <div><label style={createWsLabelStyle}>SKU</label><input value={createWsForm.sku} onChange={(e) => setCreateWsForm(f => ({...f, sku: e.target.value}))} style={createWsInputStyle} /></div>
+                   <div><label style={createWsLabelStyle}>Retention (days)</label><input type="number" value={createWsForm.retentionInDays} onChange={(e) => setCreateWsForm(f => ({...f, retentionInDays: Number(e.target.value)}))} style={createWsInputStyle} /></div>
+                 </div>
+                 <div style={createWsBtnContainerStyle}>
+                   <button type="submit" disabled={creatingWs} style={createWsSubmitStyle}>{creatingWs ? "Tworzenie..." : "Utwórz workspace"}</button>
+                   <button type="button" onClick={() => setShowCreateWs(false)} style={createWsCancelStyle}>Anuluj</button>
+                 </div>
+               </form>}
 
-              {showCreateWs && (
-                <form
-                  onSubmit={createWorkspace}
-                  style={{
-                    marginTop: "12px",
-                    padding: "12px",
-                    border: "1px solid #eee",
-                    borderRadius: "8px",
-                  }}
-                >
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr 1fr",
-                      gap: "8px",
-                    }}
-                  >
-                    <div>
-                      <label style={{ fontSize: 13 }}>Subscription ID</label>
-                      <input
-                        value={createWsForm.subscriptionId}
-                        onChange={(e) =>
-                          setCreateWsForm((f) => ({
-                            ...f,
-                            subscriptionId: e.target.value,
-                          }))
-                        }
-                        required
-                        style={{
-                          width: "100%",
-                          padding: "8px",
-                          marginTop: "6px",
-                          borderRadius: "4px",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 13 }}>Resource Group</label>
-                      <input
-                        value={createWsForm.rgName}
-                        onChange={(e) =>
-                          setCreateWsForm((f) => ({
-                            ...f,
-                            rgName: e.target.value,
-                          }))
-                        }
-                        required
-                        style={{
-                          width: "100%",
-                          padding: "8px",
-                          marginTop: "6px",
-                          borderRadius: "4px",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 13 }}>Workspace Name</label>
-                      <input
-                        value={createWsForm.workspaceName}
-                        onChange={(e) =>
-                          setCreateWsForm((f) => ({
-                            ...f,
-                            workspaceName: e.target.value,
-                          }))
-                        }
-                        required
-                        style={{
-                          width: "100%",
-                          padding: "8px",
-                          marginTop: "6px",
-                          borderRadius: "4px",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 13 }}>Location</label>
-                      <input
-                        value={createWsForm.location}
-                        onChange={(e) =>
-                          setCreateWsForm((f) => ({
-                            ...f,
-                            location: e.target.value,
-                          }))
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "8px",
-                          marginTop: "6px",
-                          borderRadius: "4px",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 13 }}>SKU</label>
-                      <input
-                        value={createWsForm.sku}
-                        onChange={(e) =>
-                          setCreateWsForm((f) => ({
-                            ...f,
-                            sku: e.target.value,
-                          }))
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "8px",
-                          marginTop: "6px",
-                          borderRadius: "4px",
-                        }}
-                      />
-                    </div>
-                    <div>
-                      <label style={{ fontSize: 13 }}>Retention (days)</label>
-                      <input
-                        type="number"
-                        value={createWsForm.retentionInDays}
-                        onChange={(e) =>
-                          setCreateWsForm((f) => ({
-                            ...f,
-                            retentionInDays: Number(e.target.value),
-                          }))
-                        }
-                        style={{
-                          width: "100%",
-                          padding: "8px",
-                          marginTop: "6px",
-                          borderRadius: "4px",
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div
-                    style={{ marginTop: "12px", display: "flex", gap: "8px" }}
-                  >
-                    <button
-                      type="submit"
-                      disabled={creatingWs}
-                      style={{
-                        padding: "8px 12px",
-                        background: "#0078D4",
-                        color: "white",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      {creatingWs ? "Tworzenie..." : "Utwórz workspace"}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowCreateWs(false)}
-                      style={{
-                        padding: "8px 12px",
-                        background: "#E2E8F0",
-                        color: "#111",
-                        border: "none",
-                        borderRadius: "6px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Anuluj
-                    </button>
-                  </div>
-                </form>
-              )}
-              <button
-                onClick={() =>
-                  fetchDcrList(vmInfo.subscriptionId, vmInfo.resourceGroup)
-                }
-                style={{
-                  marginTop: "10px",
-                  padding: "6px 12px",
-                  background: "#0078D4",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
-                🔄 Odśwież listę DCR
-              </button>
               <div style={{ marginTop: "18px" }}>
-                <h4>📦 Dostępne DCR w tej resource group</h4>
-                {dcrLoading ? (
-                  <p>⏳ Ładowanie DCR...</p>
-                ) : dcrError ? (
-                  <p style={{ color: "red" }}>❌ {dcrError}</p>
-                ) : dcrList.length === 0 ? (
-                  <p>Brak DCR w tej resource group.</p>
-                ) : (
-                  <ul style={{ paddingLeft: "20px" }}>
-                    {dcrList.map((dcr) => (
-                      <li key={dcr.id}>
-                        <strong>{dcr.name}</strong> — {dcr.location}
-                        {dcr.description && (
-                          <span style={{ color: "#666" }}>
-                            {" "}
-                            ({dcr.description})
-                          </span>
-                        )}
+                <h4>🔗 Reguły DCR dla tej VM wysyłające do: {workspaces.find(ws => ws.workspaceGuid === selectedWorkspaceId)?.name || 'N/A'}</h4>
+                 <button onClick={() => fetchDcrList(selectedWorkspaceId)} style={refreshDcrButtonStyle} disabled={!selectedWorkspaceId || dcrLoading}>
+                  🔄 Odśwież listę DCR
+                </button>
+                 <button onClick={() => setShowCreateDCRModal(true)} disabled={!selectedWorkspaceId || !vmInfo?.resourceId} style={createDcrButtonStyle}>
+                  ➕ Utwórz i przypisz DCR do tej VM
+                </button>
+                <CreateDCRAssociationModal
+                  isOpen={showCreateDCRModal}
+                  onClose={() => setShowCreateDCRModal(false)}
+                  onCreated={() => fetchDcrList(selectedWorkspaceId)}
+                  vmInfo={{ vmName: vmId, subscriptionId: vmInfo?.subscriptionId, resourceGroup: vmInfo?.resourceGroup,
+                    resourceId: vmInfo?.resourceId, location: vmInfo?.location }}
+                />
+                {dcrMessage && <p style={{ color: dcrError ? "red" : "#2D3748", marginTop: '5px' }}>{dcrMessage}</p>}
+
+                {dcrLoading ? ( <p>⏳ Ładowanie DCR...</p> )
+                 : dcrError ? ( <p style={{ color: "red" }}>❌ {dcrError}</p> )
+                 : !selectedWorkspaceId ? (<p style={{color: '#777'}}>Wybierz Workspace, aby zobaczyć powiązane DCR.</p>)
+                 : dcrList.length === 0 ? ( <p>Brak DCR skojarzonych z tą VM dla wybranego Workspace.</p> )
+                 : (
+                  <ul style={{ paddingLeft: "20px", marginTop: '10px' }}>
+                    {dcrList.map((assoc) => (
+                      <li key={assoc.associationName}>
+                        <strong>{assoc.dcrName}</strong>
+                        {assoc.description && <span style={{ color: "#666" }}> ({assoc.description})</span>}
+                        <small style={{display:'block', color: '#888'}}>ID reguły: {assoc.dcrId}</small>
                       </li>
                     ))}
                   </ul>
-                )}
+                 )}
+              </div>
+              
+              <div style={{ marginTop: "30px" }}>
+                <h4>📄 Eksportuj logi z workspace: {workspaces.find(ws => ws.workspaceGuid === selectedWorkspaceId)?.name || 'N/A'}</h4>
+                <div style={logQueryStyle}>
+                  <label>Wybierz typ logów do eksportu:</label>
+                  <button onClick={() => handleExportLogs('perf')} disabled={!selectedWorkspaceId} style={exportButtonStyle}>
+                    Pobierz Perf (CSV)
+                  </button>
+                  <button onClick={() => handleExportLogs('heartbeat')} disabled={!selectedWorkspaceId} style={exportButtonStyle}>
+                    Pobierz Heartbeat (CSV)
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ marginTop: "30px" }}>
+                <h4>✍️ Niestandardowe zapytanie KQL</h4>
+                <p style={{fontSize: '14px', color: '#666', margin: '5px 0'}}>
+                  Wykonaj własne zapytanie KQL w wybranym workspace. Zapytanie musi zawierać filtr `where Computer == '{vmId}'`.
+                </p>
+                <textarea
+                  value={kqlQuery}
+                  onChange={(e) => setKqlQuery(e.target.value)}
+                  style={{...createWsInputStyle, width: '100%', height: '100px', fontFamily: 'monospace'}}
+                  placeholder={`np. Perf | where Computer == '${vmId}' | take 100`}
+                />
+                <button onClick={handleKqlQuerySubmit} disabled={!selectedWorkspaceId || kqlLoading} style={fetchLogButtonStyle}>
+                  {kqlLoading ? 'Wykonywanie...' : '🔍 Wykonaj zapytanie'}
+                </button>
+
+                {kqlLoading ? ( <p>⏳ Ładowanie wyników...</p> )
+                 : kqlError ? ( <p style={{ color: "red", marginTop: '10px' }}>❌ {kqlError}</p> )
+                 : kqlResults.length > 0 ? (
+                   <div style={{marginTop: '15px', overflowX: 'auto'}}>
+                     {renderKqlTable()}
+                   </div>
+                 ) : (
+                   !kqlError && <p style={{color: '#777', marginTop: '10px'}}>Kliknij "Wykonaj zapytanie", aby zobaczyć wyniki.</p>
+                 )}
               </div>
             </div>
           )}
-          <div style={{ marginTop: "30px" }}>
-            <h4>📄 Pobierz logi z workspace</h4>
-            <div
-              style={{
-                display: "flex",
-                gap: "10px",
-                alignItems: "center",
-                marginBottom: "10px",
-              }}
-            >
-              <label>Typ zapytania:</label>
-              <select
-                value={logType}
-                onChange={(e) => setLogType(e.target.value)}
-                style={{ padding: "6px", borderRadius: "4px" }}
+          {activeTab === "alerts" && (
+            <div style={{ marginTop: "10px" }}>
+              <h3>🚨 Alerty dla {vmId}</h3>
+              
+              <button 
+                onClick={() => setShowCreateAlertModal(true)} 
+                style={buttonStyle}
               >
-                <option value="heartbeat">Heartbeat</option>
-                <option value="perf">Perf (CPU)</option>
-              </select>
-              <button
-                onClick={fetchLogsBasic}
-                style={{
-                  padding: "6px 12px",
-                  background: "#0078D4",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "4px",
-                  cursor: "pointer",
-                }}
-              >
-                🔍 Pobierz logi
+                ➕ Utwórz nową regułę alertu
               </button>
-            </div>
-
-            {logRows.length > 0 ? (
-              <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                <thead>
-                  <tr>
-                    {Object.keys(logRows[0]).map((key) => (
-                      <th
-                        key={key}
-                        style={{
-                          border: "1px solid #ccc",
-                          padding: "6px",
-                          background: "#eee",
-                        }}
-                      >
-                        {key}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {logRows.map((row, idx) => (
-                    <tr key={idx}>
-                      {Object.values(row).map((val, i) => (
-                        <td
-                          key={i}
-                          style={{ border: "1px solid #ccc", padding: "6px" }}
-                        >
-                          {String(val)}
-                        </td>
+              
+              <CreateMetricAlertModal
+                isOpen={showCreateAlertModal}
+                onClose={() => setShowCreateAlertModal(false)}
+                onCreated={fetchAlerts}
+                vmInfo={vmInfo}
+                vmId={vmId}
+              />
+              
+              <div style={{ marginTop: "20px" }}>
+                <h4>Istniejące reguły alertów dla tej VM</h4>
+                <button onClick={fetchAlerts} style={refreshDcrButtonStyle} disabled={alertsLoading}>
+                  {alertsLoading ? 'Odświeżanie...' : '🔄 Odśwież listę alertów'}
+                </button>
+                {alertsLoading ? ( <p>⏳ Ładowanie alertów...</p> )
+                 : alertsError ? ( <p style={{ color: "red" }}>❌ {alertsError}</p> )
+                 : alerts.length === 0 ? ( <p>Brak alertów metryk skonfigurowanych dla tej VM.</p> )
+                 : (
+                  <table style={logTableStyle}>
+                    <thead>
+                      <tr>
+                        <th style={logThStyle}>Nazwa Alertu</th>
+                        <th style={logThStyle}>Opis</th>
+                        <th style={logThStyle}>Włączony</th>
+                        <th style={logThStyle}>Akcje</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {alerts.map((alert) => (
+                        <tr key={alert.name}>
+                          <td style={logTdStyle}>{alert.name}</td>
+                          <td style={logTdStyle}>{alert.description}</td>
+                          <td style={logTdStyle}>{alert.enabled ? '✅ Tak' : '❌ Nie'}</td>
+                          <td style={logTdStyle}>
+                            <button
+                              onClick={() => handleDeleteAlert(alert.name)}
+                              style={{...exportButtonStyle, background: '#E53E3E'}}
+                            >
+                              🗑️ Usuń
+                            </button>
+                          </td>
+                        </tr>
                       ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            ) : (
-              <p>Brak danych do wyświetlenia.</p>
-            )}
-          </div>
+                    </tbody>
+                  </table>
+                 )}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>
   );
+};
+
+const btnStyle = { marginBottom: "20px", padding: "8px 16px", fontSize: "16px", background: "#0078D4", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
+const tabButtonStyle = { padding: "8px 16px", border: "none", borderRadius: "6px", cursor: "pointer"};
+const activeTabStyle = { background: "#0078D4", color: "white" };
+const inactiveTabStyle = { background: "#eee", color: "#333"};
+const metricButtonStyle = { padding: "6px 12px", border: "none", borderRadius: "4px", cursor: "pointer" };
+const activeMetricStyle = { background: "#0078D4", color: "white" };
+const inactiveMetricStyle = { background: "#eee", color: "#333" };
+const installButtonStyle = { marginLeft: "10px", padding: "6px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "4px", cursor: "pointer"};
+const wsSelectStyle = { padding: "6px", borderRadius: "4px" };
+const createWsButtonStyle = { marginLeft: "8px", padding: "6px 10px", background: "#6B46C1", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
+const createDcrButtonStyle = { marginLeft: "12px", padding: "6px 10px", background: "#2D3748", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
+const refreshDcrButtonStyle = { marginTop: "10px", padding: "6px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginRight: '10px'};
+const logQueryStyle = { display: "flex", gap: "10px", alignItems: "center", marginBottom: "10px", flexWrap: 'wrap'};
+const exportButtonStyle = { padding: "6px 12px", background: "#38A169", color: "white", border: "none", borderRadius: "4px", cursor: "pointer", marginLeft: "5px"};
+const fetchLogButtonStyle = { padding: "6px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "4px", cursor: "pointer"};
+const logTableStyle = { borderCollapse: "collapse", width: "100%", marginTop: '10px' };
+const logThStyle = { border: "1px solid #ccc", padding: "6px", background: "#eee", textAlign: 'left'};
+const logTdStyle = { border: "1px solid #ccc", padding: "6px", verticalAlign: 'top'};
+const createWsFormStyle = { marginTop: "12px", padding: "12px", border: "1px solid #eee", borderRadius: "8px"};
+const createWsGridStyle = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px"};
+const createWsInputStyle = { width: "100%", padding: "8px", marginTop: "6px", borderRadius: "4px", boxSizing: 'border-box'};
+const createWsLabelStyle = { fontSize: 13 };
+const createWsBtnContainerStyle = { marginTop: "12px", display: "flex", gap: "8px"};
+const createWsSubmitStyle = { padding: "8px 12px", background: "#0078D4", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
+const createWsCancelStyle = { padding: "8px 12px", background: "#E2E8F0", color: "#111", border: "none", borderRadius: "6px", cursor: "pointer"};
+
+const buttonStyle = {
+  padding: '10px', background: '#0078D4', color: 'white', border: 'none',
+  borderRadius: '8px', cursor: 'pointer', marginRight: '10px', marginBottom: '10px'
 };
 
 export default VMMonitor;

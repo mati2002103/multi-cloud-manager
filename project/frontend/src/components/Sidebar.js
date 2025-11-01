@@ -11,64 +11,84 @@ const Sidebar = ({ onLogout }) => {
     { name: "Storage", path: "/storage" },
     { name: "Sieci", path: "/networks" },
     { name: "Subskrypcje", path: "/subscriptions" },
-    { name: "Użytkownicy", path: "/Accounts" },
+    { name: "Użytkownicy", path: "/accounts" },
   ];
 
   return (
-    <div style={styles.sidebar}>
-      <h2 style={styles.logo}>Cloud Manager</h2>
-      <ul style={styles.menu}>
-        {menuItems.map((item) => (
-          <li
-            key={item.name}
-            style={{
-              ...styles.menuItem,
-              backgroundColor:
-                location.pathname === item.path ? "#2d3748" : "transparent",
-            }}
-          >
-            <Link to={item.path} style={styles.link}>
-              {item.name}
-            </Link>
-          </li>
-        ))}
-      </ul>
+    <aside style={styles.sidebar}>
+      {/* Sekcja górna */}
+      <div style={styles.topSection}>
+        <h2 style={styles.logo}>Cloud Manager</h2>
+        <ul style={styles.menu}>
+          {menuItems.map((item) => (
+            <li
+              key={item.name}
+              style={{
+                ...styles.menuItem,
+                backgroundColor:
+                  location.pathname === item.path ? "#2d3748" : "transparent",
+              }}
+            >
+              <Link to={item.path} style={styles.link}>
+                {item.name}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      {/* Sekcja dolna */}
       <button style={styles.logoutBtn} onClick={onLogout}>
         Wyloguj
       </button>
-    </div>
+    </aside>
   );
 };
 
 const styles = {
-
   sidebar: {
     width: "220px",
-    height: "100vh",
     backgroundColor: "#1a202c",
     color: "#fff",
-    padding: "5px",
+    padding: "16px 10px",
     display: "flex",
     flexDirection: "column",
-    justifyContent: "space-between",
+    justifyContent: "space-between", 
+    height: "100vh",
   },
-  logo: { textAlign: "center", marginBottom: "20px" },
-  menu: { listStyle: "none", padding: 0 },
+
+  topSection: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "flex-start",
+  },
+
+  logo: {
+    textAlign: "center",
+    margin: "0 auto 20px auto",
+    fontSize: "18px",
+    fontWeight: "bold",
+  },
+
+  menu: { listStyle: "none", padding: 0, margin: 0 },
+
   menuItem: {
     marginBottom: "10px",
     padding: "10px",
     borderRadius: "5px",
+    width: "100%",
   },
-  link: { color: "#fff", textDecoration: "none" },
+
+  link: { color: "#fff", textDecoration: "none", display: "block" },
+
   logoutBtn: {
-    marginTop: "auto",
     padding: "10px",
     backgroundColor: "#e53e3e",
     border: "none",
     color: "#fff",
     cursor: "pointer",
     borderRadius: "5px",
-    marginBottom: "20px"
+    marginTop: "20px",
   },
 };
 

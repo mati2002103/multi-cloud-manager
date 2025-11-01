@@ -1,215 +1,241 @@
 import React, { useEffect, useState } from "react";
 import CreateContainerModal from "../components/CreateContainerModal";
+import CreateGCPContainerModal from "../components/CreateGCPContainerModal"; 
+import { useNavigate } from "react-router-dom";
 
 const Containers = () => {
-  const [containers, setContainers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [showModal, setShowModal] = useState(false);
+  const [azureContainers, setAzureContainers] = useState([]);
+  const [azureLoading, setAzureLoading] = useState(true);
+  const [azureError, setAzureError] = useState(null);
+  const [showAzureModal, setShowAzureModal] = useState(false);
 
-  const fetchContainers = async () => {
-    setLoading(true);
-    setError(null);
+  const [gcpServices, setGcpServices] = useState([]);
+  const [gcpLoading, setGcpLoading] = useState(true);
+  const [gcpError, setGcpError] = useState(null);
+  const [showGCPModal, setShowGCPModal] = useState(false); 
+
+  const navigate = useNavigate();
+  
+  const fetchAzureContainers = async () => {
+    setAzureLoading(true);
+    setAzureError(null);
     try {
-      const res = await fetch("/api/list_containers", {
-        credentials: "include",
-      });
-
+      const res = await fetch("/api/list_containers", { credentials: "include" });
       if (!res.ok) {
-        throw new Error(`Błąd HTTP: ${res.status}`);
+        const data = await res.json().catch(() => ({ error: `Błąd HTTP: ${res.status}` }));
+        throw new Error(data.error || `Błąd HTTP: ${res.status}`);
       }
-
       const data = await res.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setContainers(data.value || []);
+      setAzureContainers(data.value || []);
     } catch (err) {
-      console.error("Błąd pobierania kontenerów:", err);
-      setError(err.message);
+      console.error("Błąd pobierania kontenerów Azure:", err);
+      setAzureError(err.message);
     } finally {
-      setLoading(false);
+      setAzureLoading(false);
     }
   };
-  const handleDelete = async (container) => {
-  if (!window.confirm(`Czy na pewno chcesz usunąć kontener "${container.name}"?`)) return;
 
-  try {
-    const res = await fetch("/api/delete_container", {
-      method: "DELETE",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        subscriptionId: container.subscriptionId,
-        resourceGroup: container.resourceGroup,
-        containerName: container.name
-      }),
-    });
+  const fetchGcpContainers = async () => {
+    setGcpLoading(true);
+    setGcpError(null);
+    try {
+      const res = await fetch("/api/gcp/list_containers", { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `Błąd HTTP: ${res.status}` }));
+        throw new Error(data.error || `Błąd HTTP: ${res.status}`);
+      }
+      const data = await res.json();
+      setGcpServices(data.value || []);
+    } catch (err) {
+      console.error("Błąd pobierania usług Cloud Run (GCP):", err);
+      setGcpError(err.message);
+    } finally {
+      setGcpLoading(false);
+    }
+  };
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Błąd usuwania kontenera");
-
-    fetchContainers(); 
-  } catch (err) {
-    alert(`❌ ${err.message}`);
-  }
-};
-  const handleRestart = async (container) => {
-  if (!window.confirm(`Czy chcesz zrestartować kontener: "${container.name}"?`)) return;
-
-  try {
-    const res = await fetch("/api/restart_container", {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        subscriptionId: container.subscriptionId,
-        resourceGroup: container.resourceGroup,
-        containerName: container.name
-      }),
-    });
-
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Błąd restartowania kontenera");
-
-    fetchContainers(); 
-  } catch (err) {
-    alert(`❌ ${err.message}`);
-  }
-};
-
+  const handleDeleteGCP = async (service) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć usługę Cloud Run "${service.name}" w regionie "${service.region}"?`)) return;
+    try {
+      const res = await fetch("/api/gcp/delete_container", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: service.projectId,
+          region: service.region,
+          serviceName: service.name
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania usługi Cloud Run");
+      alert(`✅ ${data.message}`);
+      setTimeout(() => { fetchGcpContainers(); }, 3000);
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  };
 
   useEffect(() => {
-    fetchContainers();
+    fetchAzureContainers();
+    fetchGcpContainers();
   }, []);
 
+  const handleDeleteAzure = async (container) => {
+    if (!window.confirm(`Czy na pewno chcesz usunąć kontener "${container.name}"?`)) return;
+    try {
+      const res = await fetch("/api/delete_container", {
+        method: "DELETE", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId: container.subscriptionId, resourceGroup: container.resourceGroup, containerName: container.name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania kontenera");
+      fetchAzureContainers();
+    } catch (err) { alert(`❌ ${err.message}`); }
+  };
+
+  const handleRestartAzure = async (container) => {
+    if (!window.confirm(`Czy chcesz zrestartować kontener: "${container.name}"?`)) return;
+    try {
+      const res = await fetch("/api/restart_container", {
+        method: "POST", credentials: "include", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscriptionId: container.subscriptionId, resourceGroup: container.resourceGroup, containerName: container.name }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd restartowania kontenera");
+      fetchAzureContainers();
+    } catch (err) { alert(`❌ ${err.message}`); }
+  };
+
   return (
-    <div style={{ padding: "20px", maxWidth: "900px", margin: "0 auto" }}>
-      <h1>Kontenery (Azure Container Instances)</h1>
-      <p>Lista wszystkich wdrożonych kontenerów w Twoim koncie Azure.</p>
+    <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
+      <h1>📦 Kontenery (Multi-Cloud)</h1>
+      <p>Lista wszystkich wdrożonych kontenerów w Azure Container Instances i Google Cloud Run.</p>
 
-      <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-        <button
-          onClick={() => setShowModal(true)}
-          style={{
-            padding: "10px",
-            background: "#0078D4",
-            color: "white",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer"
-          }}
-        >
-          ➕ Utwórz kontener
-        </button>
+      <button onClick={() => { fetchAzureContainers(); fetchGcpContainers(); }} style={buttonStyle}>
+        🔄 Odśwież wszystko
+      </button>
 
-        <button
-          onClick={fetchContainers}
-          style={{
-            padding: "10px",
-            background: "#E0E0E0",
-            color: "#333",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer"
-          }}
-        >
-          🔄 Odśwież
+      <div style={{ marginTop: '30px', marginBottom: '40px' }}>
+        <h2>Azure Container Instances</h2>
+        <button onClick={() => setShowAzureModal(true)} style={buttonStyle}>
+          ➕ Utwórz kontener (Azure)
         </button>
+        <CreateContainerModal
+          isOpen={showAzureModal}
+          onClose={() => setShowAzureModal(false)}
+          onCreated={fetchAzureContainers}
+        />
+        {azureLoading ? (
+          <p>⏳ Ładowanie danych z Azure...</p>
+        ) : azureError ? (
+          <p style={{ color: "red" }}>❌ Błąd Azure: {azureError}</p>
+        ) : azureContainers.length === 0 ? (
+          <p>Brak dostępnych kontenerów w Azure.</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr style={headerStyle}>
+                <th>Nazwa</th>
+                <th>Resource Group</th>
+                <th>Lokalizacja</th>
+                <th>Status</th>
+                <th>Obraz</th>
+                <th>Monitor</th>
+                <th>Restart</th>
+                <th>Delete</th>
+              </tr>
+            </thead>
+            <tbody>
+              {azureContainers.map((container, idx) => (
+                <tr key={`azure-${idx}`}>
+                  <td style={cellStyle}>{container.name}</td>
+                  <td style={cellStyle}>{container.resourceGroup}</td>
+                  <td style={cellStyle}>{container.location}</td>
+                  <td style={cellStyle}>{container.status}</td>
+                  <td style={cellStyle}>{container.image}</td>
+                  <td style={cellStyle}>
+                    <span style={{ cursor: "pointer" }} onClick={() => navigate(`/container/${container.name}/monitoring`)}>
+                      📈
+                    </span>
+                  </td>
+
+                  <td style={cellStyle}>
+                    <button onClick={() => handleRestartAzure(container)}>🔁</button>
+                  </td>
+                  <td style={cellStyle}>
+                    <button onClick={() => handleDeleteAzure(container)}>🗑️</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      <CreateContainerModal
-        isOpen={showModal}
-        onClose={() => setShowModal(false)}
-        onCreated={fetchContainers}
-      />
-
-      {loading ? (
-        <p>⏳ Ładowanie danych...</p>
-      ) : error ? (
-        <p style={{ color: "red" }}>❌ Błąd: {error}</p>
-      ) : containers.length === 0 ? (
-        <p>Brak dostępnych kontenerów.</p>
-      ) : (
-        <table
-          style={{
-            width: "100%",
-            borderCollapse: "collapse",
-            border: "1px solid #ddd",
-            boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
-          }}
-        >
-          <thead>
-            <tr style={{ backgroundColor: "#f5f5f5" }}>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Nazwa kontenera
-              </th>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Resource Group
-              </th>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Lokalizacja
-              </th>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Status
-              </th>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Obraz
-              </th>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Monitor
-              </th>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Restart
-              </th>
-              <th style={{ textAlign: "left", padding: "10px", borderBottom: "1px solid #ddd" }}>
-                Delete
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {containers.map((container, idx) => (
-              <tr key={idx}>
-                <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
-                  {container.name}
-                </td>
-                <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
-                  {container.resourceGroup}
-                </td>
-                <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
-                  {container.location}
-                </td>
-                <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
-                  {container.status}
-                </td>
-                <td style={{ padding: "8px", borderBottom: "1px solid #ddd", fontFamily: "monospace" }}>
-                  {container.image}
-                </td>
-                 <td style={{ padding: "8px", borderBottom: "1px solid #ddd", fontFamily: "monospace" }}>
-                 🖥️
-                </td>
-                 <td style={{ padding: "8px", borderBottom: "1px solid #ddd", fontFamily: "monospace" }}>
-                 
-                  <button
-                    onClick={() => handleRestart(container)}>
-                    🔁
-                  </button>
-                </td>
-                 <td style={{ padding: "8px", borderBottom: "1px solid #ddd" }}>
-                  <button
-                    onClick={() => handleDelete(container)}>
-                    🗑
-                  </button>
-                </td>
+      <div>
+        <h2>Google Cloud Run Services</h2>
+       
+        <button onClick={() => setShowGCPModal(true)} style={buttonStyle}>
+          ➕ Utwórz usługę (GCP)
+        </button>
+       
+        <CreateGCPContainerModal
+          isOpen={showGCPModal}
+          onClose={() => setShowGCPModal(false)}
+          onCreated={fetchGcpContainers}
+        />
+        {gcpLoading ? (
+          <p>⏳ Ładowanie danych z GCP...</p>
+        ) : gcpError ? (
+          <p style={{ color: "red" }}>❌ Błąd GCP: {gcpError}</p>
+        ) : gcpServices.length === 0 ? (
+          <p>Brak dostępnych usług Cloud Run w GCP.</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr style={headerStyle}>
+                <th>Nazwa Usługi</th>
+                <th>Region</th>
+                <th>URL Punktu Końcowego</th>
+                <th>Utworzono</th>
+                <th>Akcje</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
+            </thead>
+            <tbody>
+              {gcpServices.map((service, idx) => (
+                <tr key={`gcp-${idx}`}>
+                  <td style={cellStyle}>{service.name}</td>
+                  <td style={cellStyle}>{service.region}</td>
+                  <td style={cellStyle}><a href={service.url} target="_blank" rel="noopener noreferrer">{service.url}</a></td>
+                  <td style={cellStyle}>{service.created ? new Date(service.created).toLocaleString() : '—'}</td>
+                  <td style={cellStyle}>
+                    <button onClick={() => handleDeleteGCP(service)} title="Usuń usługę">🗑️</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
+};
+
+const tableStyle = {
+  width: "100%", borderCollapse: "collapse", border: "1px solid #ddd",
+  boxShadow: "0 2px 8px rgba(0,0,0,0.05)", marginTop: "20px",
+};
+const headerStyle = {
+  backgroundColor: "#f5f5f5", textAlign: "left", padding: "10px",
+  borderBottom: "1px solid #ddd",
+};
+const cellStyle = {
+  padding: "8px", borderBottom: "1px solid #ddd", fontFamily: "monospace",
+};
+const buttonStyle = {
+  padding: '10px', background: '#0078D4', color: 'white', border: 'none',
+  borderRadius: '8px', cursor: 'pointer', marginRight: '10px', marginBottom: '10px'
 };
 
 export default Containers;

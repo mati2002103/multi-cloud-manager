@@ -9,15 +9,23 @@ azure-mgmt-compute
 azure-mgmt-network
 azure-monitor-query==1.2.0
 azure-mgmt-loganalytics
-azure-loganalytics
-azure-mgmt-monitor==3.0.0
-azure-mgmt-loganalytics 
+azure-mgmt-monitor 
 azure-mgmt-storage
-azure.mgmt.containerinstance
+azure-mgmt-containerinstance
 azure-storage-blob
+azure-mgmt-resource
 azure-core
 flask_cors
 
 google-auth
 google-auth-oauthlib
 google-auth-httplib2
+google-api-python-client
+google-cloud-storage
+google-cloud-resource-manager
+google-auth[requests]
+google-cloud-compute
+google-cloud-run
+
+six
+packaging
