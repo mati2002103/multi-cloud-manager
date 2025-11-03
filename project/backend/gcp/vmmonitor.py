@@ -1,4 +1,4 @@
-from flask import jsonify, request
+from flask import jsonify, request,session
 from googleapiclient.discovery import build
 from .utils import SessionCredentials, list_gcp_projects 
 from google.cloud import monitoring_v3
@@ -7,8 +7,19 @@ import pytz
 import traceback
 
 def find_vm_by_name(vm_name: str):
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+    
     try:
-        credentials = SessionCredentials()
+        credentials = SessionCredentials(gcp_account)
         compute = build('compute', 'v1', credentials=credentials)
     except Exception as e:
         print(f"[ERROR] Błąd tworzenia poświadczeń GCP: {e}")
@@ -74,13 +85,22 @@ def get_available_metrics(project_id: str, instance_id: str):
         {"type": "agent.googleapis.com/disk/percent_used", "displayName": "Użycie dysku (Agent)", "unit": "%"}
     ]
     
-    # ZMIANA: Zwróć JSON
     return jsonify({"metrics": agentless_metrics + agent_metrics}), 200
 
 
 def get_metric_timeseries(project_id: str, instance_id: str):
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
     try:
-        # ZMIANA: Pobierz dane z ciała żądania
         data = request.get_json()
         if not data:
             return jsonify({"error": "Brak danych JSON w ciele żądania"}), 400
@@ -91,7 +111,7 @@ def get_metric_timeseries(project_id: str, instance_id: str):
         if not metric_type:
             return jsonify({"error": "Brak 'metricType' w ciele żądania"}), 400
 
-        credentials = SessionCredentials()
+        credentials = SessionCredentials(gcp_account)
         client = monitoring_v3.MetricServiceClient(credentials=credentials)
 
         now = datetime.utcnow().replace(tzinfo=pytz.UTC)
@@ -108,9 +128,8 @@ def get_metric_timeseries(project_id: str, instance_id: str):
             "filter": filter_query,
             "interval": interval,
             "view": monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.FULL,
-            # Agregacja jest potrzebna dla metryk takich jak 'utilization'
             "aggregation": {
-                "alignment_period": {"seconds": 60 * 5}, # 5 minut
+                "alignment_period": {"seconds": 60 * 5}, 
                 "per_series_aligner": monitoring_v3.Aggregation.Aligner.ALIGN_MEAN
             }
         }
@@ -122,11 +141,12 @@ def get_metric_timeseries(project_id: str, instance_id: str):
         for series in query_result:
             for point in series.points:
                 value = None
-                if point.value.HasField('double_value'):
+                
+                if hasattr(point.value, 'double_value') and (point.value.double_value != 0 or metric_type == "compute.googleapis.com/instance/cpu/utilization"):
                     value = point.value.double_value
-                elif point.value.HasField('int64_value'):
+                elif hasattr(point.value, 'int64_value') and point.value.int64_value != 0:
                     value = point.value.int64_value
-                elif point.value.HasField('bool_value'):
+                elif hasattr(point.value, 'bool_value'):
                     value = 1 if point.value.bool_value else 0
                 
                 if value is not None:
@@ -135,16 +155,18 @@ def get_metric_timeseries(project_id: str, instance_id: str):
                         "average": round(value, 4) 
                     })
 
-        data_points.reverse() 
+        data_points.sort(key=lambda x: x["timestamp"]) 
         
-        # ZMIANA: Zwróć JSON
         return jsonify({"data": data_points}), 200
 
     except Exception as e:
-        print(f"[ERROR] Nie można pobrać metryki {metric_type} dla {instance_id}: {e}\n{traceback.format_exc()}")
-        # ZMIANA: Zwróć JSON
-        return jsonify({"error": str(e)}), 500
-
+        error_message = str(e)
+        print(f"[ERROR] Nie można pobrać metryki {metric_type} dla {instance_id}: {error_message}\n{traceback.format_exc()}")
+        
+        if "which_oneof" in error_message:
+             error_message = "Błąd atrybutu 'which_oneof'. Sprawdź wersję biblioteki google-cloud-monitoring."
+             
+        return jsonify({"error": error_message}), 500
 
 def get_vm_agent_status(project_id: str, instance_id: str):
     print(f"Logika [vmmonitor]: Sprawdzanie statusu agenta dla {instance_id}")

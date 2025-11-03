@@ -47,6 +47,8 @@ const VMGCPMonitor = () => {
     } catch (err) {
       console.error("Błąd pobierania danych VM:", err);
       setVmInfo({ error: err.message });
+      console.log(vmName)
+      console.log(vmInfo)
     } finally {
       setLoading(false);
     }

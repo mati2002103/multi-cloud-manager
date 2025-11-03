@@ -54,7 +54,7 @@ function App() {
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/container/:containerId/monitoring" element={<ContainerMonitor />} />
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
-                    <Route path="/vm/gcp/:vmId/monitoring" element={<VMGCPMonitor />} />
+                    <Route path="/vm/gcp/:vmName/monitoring" element={<VMGCPMonitor />} />
                     <Route path="/storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />
                     <Route path="/storage/gcp/:bucketName" element={<GCPBucketContents />} />

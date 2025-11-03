@@ -48,7 +48,6 @@ gcp_api.route("/api/gcp/create_gcp_vpc", methods=["POST"])(create_gcp_vpc)
 # subnet
 gcp_api.route("/api/gcp/create_gcp_subnet", methods=["POST"])(create_gcp_subnet)
 
-# === VM MONITORING (GCP) ===
 
 # Znajdź VM po nazwie (zwraca ID projektu, strefę, ID instancji itp.)
 gcp_api.route("/api/gcp/vm/by-name/<string:vm_name>/details", methods=["GET"])(find_vm_by_name)
