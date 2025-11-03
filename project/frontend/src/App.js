@@ -8,6 +8,8 @@ import Subscriptions from "./pages/Subscriptions";
 import Accounts from "./pages/Accounts";
 import Networks from "./pages/Networks";
 import VMMonitor from "./pages/VmMonitor";
+import VMGCPMonitor from "./pages/VMGCPMonitor";
+
 import ContainerMonitor from "./pages/ContainerMonitor";
 
 import StorageBlobContainers from "./pages/StorageBlobContainers";
@@ -34,11 +36,9 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Landing Page bez sidebara */}
         <Route path="/" element={<Home user={user} />} />
 
         {user.logged_in ? (
-          // Dla chronionych tras renderujemy layout z sidebar i main
           <Route
             path="/*"
             element={
@@ -54,13 +54,14 @@ function App() {
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/container/:containerId/monitoring" element={<ContainerMonitor />} />
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
+                    <Route path="/vm/gcp/:vmId/monitoring" element={<VMGCPMonitor />} />
                     <Route path="/storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />
                     <Route path="/storage/gcp/:bucketName" element={<GCPBucketContents />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>
                 </main>
-              </div>
+              </div> 
             }
           />
         ) : (

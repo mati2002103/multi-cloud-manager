@@ -240,15 +240,11 @@ const ContainerMonitor = () => {
     }
   };
 
-  // --- NOWE FUNKCJE OBSŁUGI ALERTÓW ---
-  
-  // Zmiana stanu formularza modala
   const handleAlertFormChange = (e) => {
     const { name, value } = e.target;
     setCreateAlertForm(prev => ({ ...prev, [name]: value }));
   };
 
-  // Wysyłanie formularza tworzenia alertu
   const handleCreateAlertSubmit = async (e) => {
     e.preventDefault();
     if (!createAlertForm.actionGroupId) {
@@ -278,12 +274,11 @@ const ContainerMonitor = () => {
 
       alert(data.message || "Alert utworzony pomyślnie!");
       setShowCreateAlertModal(false);
-      // Resetuj formularz do wartości domyślnych
       setCreateAlertForm({
         actionGroupId: "", metricName: "CpuUsage", threshold: 80,
         operator: "GreaterThan", timeWindow: "PT5M", evaluationFrequency: "PT1M"
       });
-      fetchAlerts(); // Odśwież listę alertów
+      fetchAlerts(); 
 
     } catch (err) {
       setCreateAlertError(err.message);
@@ -292,7 +287,6 @@ const ContainerMonitor = () => {
     }
   };
 
-  // Usuwanie alertu
   const handleDeleteAlert = async (alertName) => {
     if (!window.confirm(`Czy na pewno chcesz usunąć alert '${alertName}'?`)) {
       return;
@@ -713,6 +707,5 @@ const modalInputStyle = {
   marginTop: 0,
   fontSize: '15px'
 };
-// ------------------------------
 
 export default ContainerMonitor;

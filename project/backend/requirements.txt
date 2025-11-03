@@ -26,6 +26,7 @@ google-cloud-resource-manager
 google-auth[requests]
 google-cloud-compute
 google-cloud-run
+google-cloud-monitoring
 
 six
 packaging

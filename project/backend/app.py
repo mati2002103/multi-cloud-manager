@@ -4,7 +4,7 @@ from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = "super-secret-key"  # lub z .env
+    app.secret_key = "super-secret-key"  
     
     CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
     

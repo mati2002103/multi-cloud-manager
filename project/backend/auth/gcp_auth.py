@@ -56,6 +56,9 @@ def google_callback():
     except Exception as e:
         return jsonify({"error": "Błąd weryfikacji tokenu ID", "details": str(e)}), 401
 
+    session["user"] = idinfo
+    session["access_token"] = access_token
+
     new_gcp_account = {
         "provider": "gcp",
         "email": idinfo.get("email"),
@@ -77,6 +80,5 @@ def google_callback():
         accounts.append(new_gcp_account)
 
     session.modified = True
-
-    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:3000")
-    return redirect(f"{frontend_url}/Accounts")
+    print("Redirecting http://localhost:3000/dashboard")
+    return redirect(f"http://localhost:3000/dashboard")#

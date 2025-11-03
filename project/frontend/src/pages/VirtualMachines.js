@@ -334,6 +334,7 @@ const VirtualMachines = () => {
                 <th>Lokalizacja (Strefa)</th>
                 <th>Status</th>
                 <th>Typ maszyny</th>
+                 <th>Monitor</th>
                 <th>Akcje</th>
               </tr>
             </thead>
@@ -345,6 +346,12 @@ const VirtualMachines = () => {
                   <td style={cellStyle}>{vm.location}</td>
                   <td style={cellStyle}>{vm.status}</td>
                   <td style={cellStyle}>{vm.machineType}</td>
+                  <td style={cellStyle}>
+                    <span style={{ cursor: "pointer" }} onClick={() => navigate(`/vm/gcp/${vm.name}/monitoring`)}>
+                      📈
+                    </span>
+                  </td>
+
                   <td style={cellStyle}>
                     <button onClick={() => handleDeleteGcpVm(vm)} title="Usuń maszynę wirtualną">
                       ❌
