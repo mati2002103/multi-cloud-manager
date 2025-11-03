@@ -169,9 +169,56 @@ def get_metric_timeseries(project_id: str, instance_id: str):
         return jsonify({"error": error_message}), 500
 
 def get_vm_agent_status(project_id: str, instance_id: str):
-    print(f"Logika [vmmonitor]: Sprawdzanie statusu agenta dla {instance_id}")
-    # TODO: Zaimplementować logikę sprawdzania agenta
-    return jsonify({"hasOpsAgent": False, "message": "Logika do implementacji"}), 200
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        client = monitoring_v3.MetricServiceClient(credentials=credentials)
+
+        now = datetime.utcnow().replace(tzinfo=pytz.UTC)
+        interval = monitoring_v3.TimeInterval(
+            end_time=now,
+            start_time=now - timedelta(minutes=10)
+        )
+
+        project_name = f"projects/{project_id}"
+        
+        filter_query = (
+            f'metric.type = "agent.googleapis.com/agent/uptime" AND '
+            f'resource.labels.instance_id = "{instance_id}"'
+        )
+
+        request = {
+            "name": project_name,
+            "filter": filter_query,
+            "interval": interval,
+            "view": monitoring_v3.ListTimeSeriesRequest.TimeSeriesView.HEADERS 
+        }
+        
+        results = client.list_time_series(request=request)
+        
+        has_data = any(True for _ in results)
+
+        if has_data:
+            print(f"Logika [vmmonitor]: Znaleziono aktywny Ops Agent dla {instance_id}")
+            return jsonify({"hasOpsAgent": True, "message": "Ops Agent jest aktywny."}), 200
+        else:
+            print(f"Logika [vmmonitor]: Nie znaleziono Ops Agenta dla {instance_id}")
+            return jsonify({"hasOpsAgent": False, "message": "Ops Agent nie raportuje (nieaktywny lub niezainstalowany)."}), 200
+
+    except Exception as e:
+        print(f"[ERROR] Błąd podczas sprawdzania statusu agenta: {e}\n{traceback.format_exc()}")
+        return jsonify({"hasOpsAgent": False, "message": f"Błąd: {str(e)}"}), 500
 
 def install_ops_agent(project_id: str, instance_id: str):
     print(f"Logika [vmmonitor]: Instalacja agenta dla {instance_id}")
