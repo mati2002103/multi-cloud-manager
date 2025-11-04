@@ -1,5 +1,7 @@
 from flask import jsonify, request,session
 from googleapiclient.discovery import build
+from google.cloud import osconfig_v1
+from google.cloud.osconfig_v1 import types
 from .utils import SessionCredentials, list_gcp_projects 
 from google.cloud import monitoring_v3
 from datetime import datetime, timedelta
@@ -221,9 +223,84 @@ def get_vm_agent_status(project_id: str, instance_id: str):
         return jsonify({"hasOpsAgent": False, "message": f"Błąd: {str(e)}"}), 500
 
 def install_ops_agent(project_id: str, instance_id: str):
-    print(f"Logika [vmmonitor]: Instalacja agenta dla {instance_id}")
-    # TODO: Zaimplementować logikę instalacji agenta
-    return jsonify({"message": "Instalacja Ops Agent nie jest jeszcze zaimplementowana."}), 200
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+    try:
+        credentials = SessionCredentials(gcp_account)
+        compute_client = build("compute", "v1", credentials=credentials)
+    except Exception as e:
+        print(f"[ERROR] Błąd tworzenia poświadczeń GCP: {e}")
+        return jsonify({"error": f"Błąd poświadczeń GCP: {str(e)}"}), 500
+
+    zone = None
+    instance_name = None
+    os_type = None 
+
+    try:
+        req = compute_client.instances().aggregatedList(project=project_id, filter=f"id = {instance_id}")
+        response = req.execute()
+        
+        for zone_name, zone_data in response.get('items', {}).items():
+            if 'instances' in zone_data:
+                for inst in zone_data['instances']:
+                    if inst['id'] == instance_id:
+                        zone = zone_name.split('/')[-1]
+                        instance_name = inst['name']
+                        if 'guestOsFeatures' in inst:
+                            for feature in inst['guestOsFeatures']:
+                                if 'type' in feature and 'WINDOWS' in feature['type']:
+                                    os_type = 'WINDOWS'
+                                    break
+                        if not os_type:
+                             os_type = 'LINUX'
+                        break
+            if zone:
+                break
+    except Exception as e:
+         print(f"[ERROR] Nie można znaleźć VM {instance_id} przez aggregatedList: {e}")
+         
+    if not zone or not instance_name:
+        return jsonify({"error": "Nie znaleziono maszyny o podanym ID."}), 404
+
+    if os_type == 'WINDOWS':
+        install_script = "Start-Process -FilePath \"https://dl.google.com/cloudagents/windows/google-cloud-ops-agent-msi.exe\" -ArgumentList \"/allusers /quiet\" -Wait"
+        command_type = types.RunGuestCommandRequest.CommandType.POWERSHELL    
+    else: 
+        install_script = "curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh && sudo bash add-google-cloud-ops-agent-repo.sh --also-install"
+        command_type = types.RunGuestCommandRequest.CommandType.SHELL
+
+    print(f"Wybrano skrypt dla {os_type}")
+
+    try:
+        osconfig_client = osconfig_v1.OsConfigServiceClient(credentials=credentials)
+        
+        request_body = types.RunGuestCommandRequest(
+            name=f"projects/{project_id}/locations/{zone}/instances/{instance_id}",
+            command=types.RunGuestCommandRequest.Command(
+                type_=command_type,
+                script=install_script
+            )
+        )
+
+        response = osconfig_client.run_guest_command(request=request_body)
+
+        return jsonify({
+            "message": f"Zainicjowano instalację Ops Agent ({os_type}) na VM '{instance_name}'.",
+            "operation_name": response.name
+        }), 202
+
+    except Exception as e:
+        print(f"--- KRYTYCZNY BŁĄD instalacji agenta --- \n{traceback.format_exc()}\n")
+        return jsonify({"error": f"Błąd instalacji agenta: {str(e)}"}), 500
+    
 
 def query_lql_logs(project_id: str, instance_id: str):
     data = request.get_json()

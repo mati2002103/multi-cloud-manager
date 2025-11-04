@@ -27,7 +27,9 @@ google-auth[requests]
 google-cloud-compute
 google-cloud-run
 google-cloud-monitoring
+google-cloud-os-config
 
 six
 packaging
 pytz
+importlib-metadata
