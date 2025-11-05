@@ -1,7 +1,8 @@
 from flask import jsonify, request,session
 from googleapiclient.discovery import build
+from google.cloud import logging_v2
 from google.cloud import osconfig_v1
-from google.cloud.osconfig_v1 import types
+from google.cloud.osconfig_v1 import types 
 from .utils import SessionCredentials, list_gcp_projects 
 from google.cloud import monitoring_v3
 from datetime import datetime, timedelta
@@ -303,28 +304,225 @@ def install_ops_agent(project_id: str, instance_id: str):
     
 
 def query_lql_logs(project_id: str, instance_id: str):
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
     data = request.get_json()
     if not data or not data.get("lqlQuery"):
         return jsonify({"error": "Brak 'lqlQuery' w ciele żądania"}), 400
         
     lql_query = data.get("lqlQuery")
-    print(f"Logika [vmmonitor]: Wykonywanie zapytania LQL w {project_id}: {lql_query[:50]}...")
-    # TODO: Zaimplementować logikę Cloud Logging
-    return jsonify({"value": [], "message": "Logika do implementacji"}), 200
+    
+    instance_filter = f'resource.labels.instance_id="{instance_id}"'
+    if instance_filter not in lql_query:
+        return jsonify({"error": f"Zapytanie LQL musi zawierać filtr: {instance_filter}"}), 400
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        client = logging_v2.Client(credentials=credentials, project=project_id)
+        
+        entries_iterator = client.list_entries(
+            filter_=lql_query,
+            order_by=logging_v2.DESCENDING, 
+            page_size=100
+        )
+        
+        results = []
+        columns_set = set(["timestamp", "severity", "logName"])
+        rows_data = []
+        
+        for entry in entries_iterator:
+            row = {
+                "timestamp": entry.timestamp.isoformat(),
+                "severity": entry.severity,
+                "logName": entry.log_name.split('/')[-1]
+            }
+
+            payload = entry.payload
+
+            if isinstance(payload, dict):
+                for key, value in payload.items():
+                    columns_set.add(key) 
+                    row[key] = str(value) 
+                if "payload" in columns_set:
+                    columns_set.remove("payload")
+            elif isinstance(payload, str):
+                row["payload"] = payload
+            else:
+                row["payload"] = str(payload) if payload is not None else "N/A"
+            
+            rows_data.append(row)
+            
+        if not rows_data:
+            return jsonify({"columns": [], "rows": []}), 200
+
+        #
+        columns = sorted(list(columns_set))
+        final_rows = []
+        for row in rows_data:
+            final_rows.append([row.get(col_name, "") for col_name in columns])
+
+        return jsonify({"columns": columns, "rows": final_rows}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Błąd podczas wykonywania zapytania LQL: {str(e)}"}), 500
+    
 
 def list_vm_alerts(project_id: str, instance_id: str):
-    # Filtrowanie alertów dla konkretnej VM w GCP wymaga filtrowania po 'resource.labels.instance_id'
-    instance_filter = f'resource.labels.instance_id = "{instance_id}"'
-    print(f"Logika [vmmonitor]: Listowanie alertów w {project_id} z filtrem: {instance_filter}")
-    # TODO: Zaimplementować logikę listowania alertów
-    return jsonify({"value": [], "message": "Logika do implementacji"}), 200
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        client = monitoring_v3.AlertPolicyServiceClient(credentials=credentials)
+        project_name = f"projects/{project_id}"
+        
+        request = monitoring_v3.ListAlertPoliciesRequest(name=project_name)
+        policies = client.list_alert_policies(request=request)
+        
+        vm_alerts = []
+        filter_str = f'resource.labels.instance_id = "{instance_id}"'
+        
+        for policy in policies:
+            found = False
+            for condition in policy.conditions:
+                if (condition.condition_threshold and 
+                    condition.condition_threshold.filter and 
+                    filter_str in condition.condition_threshold.filter):
+                    found = True
+                    break
+                if (condition.condition_absent and 
+                    condition.condition_absent.filter and 
+                    filter_str in condition.condition_absent.filter):
+                    found = True
+                    break
+            
+            if found:
+                vm_alerts.append({
+                    "name": policy.name.split('/')[-1], 
+                    "displayName": policy.display_name,
+                    "enabled": policy.enabled,
+                    "description": policy.documentation.content if policy.documentation else "Brak opisu."
+                })
+                
+        return jsonify({"value": vm_alerts}), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Błąd podczas listowania alertów: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Błąd podczas listowania alertów: {str(e)}"}), 500
 
 def create_gcp_alert(project_id: str, instance_id: str):
-    print(f"Logika [vmmonitor]: Tworzenie alertu dla {instance_id}")
-    # TODO: Zaimplementować logikę tworzenia alertów
-    return jsonify({"message": "Logika do implementacji"}), 201
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Brak danych w ciele żądania."}), 400
+        
+    display_name = data.get("alertName")
+    metric_type = data.get("metricType")
+    threshold = data.get("threshold") 
+    
+    if not all([display_name, metric_type, threshold]):
+        return jsonify({"error": "Wymagane pola: alertName, metricType, threshold"}), 400
+
+    print(f"Logika [vmmonitor]: Tworzenie alertu '{display_name}' dla {instance_id}")
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        client = monitoring_v3.AlertPolicyServiceClient(credentials=credentials)
+        project_name = f"projects/{project_id}"
+
+        condition = monitoring_v3.AlertPolicy.Condition(
+            display_name=f"{metric_type} > {threshold} przez 5 minut",
+            condition_threshold=monitoring_v3.AlertPolicy.Condition.MetricThreshold(
+                filter=(
+                    f'metric.type = "{metric_type}" AND '
+                    f'resource.type = "gce_instance" AND ' 
+                    f'resource.labels.instance_id = "{instance_id}"'
+                ),
+                aggregations=[
+                    monitoring_v3.Aggregation(
+                        alignment_period={"seconds": 60},
+                        per_series_aligner=monitoring_v3.Aggregation.Aligner.ALIGN_MEAN,
+                    )
+                ],
+                comparison=monitoring_v3.ComparisonType.COMPARISON_GT,
+                threshold_value=float(threshold),
+                duration={"seconds": 300}, # 5 minut
+                trigger=monitoring_v3.AlertPolicy.Condition.Trigger(count=1),
+            ),
+        )
+
+        policy = monitoring_v3.AlertPolicy(
+            display_name=display_name,
+            combiner=monitoring_v3.AlertPolicy.ConditionCombinerType.AND,
+            conditions=[condition],
+        )
+        
+        request_data = monitoring_v3.CreateAlertPolicyRequest(
+            name=project_name,
+            alert_policy=policy
+        )
+
+        created_policy = client.create_alert_policy(request=request_data)
+
+        return jsonify({
+            "message": f"Utworzono alert '{created_policy.display_name}'. (Uwaga: nie skonfigurowano kanałów notyfikacji).",
+            "name": created_policy.name.split('/')[-1],
+            "displayName": created_policy.display_name
+        }), 201
+
+    except Exception as e:
+        print(f"[ERROR] Błąd podczas tworzenia alertu: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Błąd podczas tworzenia alertu: {str(e)}"}), 500
 
 def delete_gcp_alert(project_id: str, alert_name: str):
-    print(f"Logika [vmmonitor]: Usuwanie alertu {alert_name}")
-    # TODO: Zaimplementować logikę usuwania alertów
-    return jsonify({"message": "Logika do implementacji"}), 200
+    accounts = session.get("accounts", [])
+    gcp_account = None
+    for acc in accounts:
+        if acc.get("provider") == "gcp" and acc.get("refresh_token"):
+            gcp_account = acc
+            break
+    if not gcp_account:
+        return jsonify({"error": "Nie znaleziono aktywnego konta GCP w sesji"}), 404
+    if not isinstance(gcp_account.get("access_token"), str) or not gcp_account.get("refresh_token"):
+        return jsonify({"error": "Brak kompletnych lub poprawnych tokenów w sesji. Proszę zalogować się ponownie."}), 401
+
+    try:
+        credentials = SessionCredentials(gcp_account)
+        client = monitoring_v3.AlertPolicyServiceClient(credentials=credentials)
+        policy_full_name = f"projects/{project_id}/alertPolicies/{alert_name}"
+        
+        request_data = monitoring_v3.DeleteAlertPolicyRequest(name=policy_full_name)
+        client.delete_alert_policy(request=request_data)
+        
+        return jsonify({"message": f"Alert '{alert_name}' został pomyślnie usunięty."}), 200
+        
+    except Exception as e:
+        print(f"[ERROR] Błąd podczas usuwania alertu: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": f"Błąd podczas usuwania alertu: {str(e)}"}), 500

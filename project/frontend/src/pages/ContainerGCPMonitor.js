@@ -3,16 +3,15 @@ import { useParams, useNavigate } from "react-router-dom";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from "recharts";
-import CreateGcpAlertModal from "../components/CreateGCPVMAlertModal"; 
+import CreateGcpAlertModal from "../components/CreateGCPContainerAlertModal"; 
 
-const VMGCPMonitor = () => {
-  const { vmName } = useParams();
+const ContainerGCPMonitor = () => {
+  const { containerName } = useParams();
   const navigate = useNavigate();
 
-  const [vmInfo, setVmInfo] = useState(null); 
+  const [containerInfo, setContainerInfo] = useState(null); 
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("cloudMonitoring");
-  const [agentStatus, setAgentStatus] = useState("⏳");
 
   const [metricsList, setMetricsList] = useState([]);
   const [metricsListLoading, setMetricsListLoading] = useState(false);
@@ -33,46 +32,34 @@ const VMGCPMonitor = () => {
   const [alertsError, setAlertsError] = useState(null);
   const [showCreateAlertModal, setShowCreateAlertModal] = useState(false);
 
-  const fetchVmDetailsByName = useCallback(async () => {
+  const fetchContainerDetailsByName = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/gcp/vm/by-name/${vmName}/details`, { credentials: "include" });
+      const res = await fetch(`/api/gcp/container/by-name/${containerName}/details`, { credentials: "include" });
       if (!res.ok) {
          const errData = await res.json();
-         throw new Error(errData.error || `Nie znaleziono VM o nazwie ${vmName}`);
+         throw new Error(errData.error || `Nie znaleziono kontenera o nazwie ${containerName}`);
       }
       const data = await res.json();
-      setVmInfo(data);
-      setLqlQuery(`resource.type="gce_instance"\nresource.labels.instance_id="${data.instanceId}"`);
+      setContainerInfo(data); 
+      
+      
+      setLqlQuery(`resource.type="cloud_run_revision"\nresource.labels.service_name="${containerName}"`);
     } catch (err) {
-      console.error("Błąd pobierania danych VM:", err);
-      setVmInfo({ error: err.message });
-      console.log(vmName)
-      console.log(vmInfo)
+      console.error("Błąd pobierania danych kontenera:", err);
+      setContainerInfo({ error: err.message });
     } finally {
       setLoading(false);
     }
-  }, [vmName]);
-
-  const fetchAgentStatus = useCallback(async () => {
-    if (!vmInfo?.projectId || !vmInfo?.instanceId) return;
-    try {
-      const res = await fetch(`/api/gcp/vm/${vmInfo.projectId}/${vmInfo.instanceId}/agent-status`, { credentials: "include" });
-      const data = await res.json();
-      if (data.hasOpsAgent) setAgentStatus("✅ Ops Agent");
-      else setAgentStatus("❌ Brak");
-    } catch (err) {
-      setAgentStatus("⏳ (Błąd)");
-    }
-  }, [vmInfo]);
+  }, [containerName]);
 
   const fetchAvailableMetrics = useCallback(async () => {
-    if (!vmInfo?.projectId || !vmInfo?.instanceId) return; 
+    if (!containerInfo?.projectId || !containerInfo?.region) return; 
     
     setMetricsListLoading(true);
     setMetricsListError(null);
     try {
-      const res = await fetch(`/api/gcp/vm/${vmInfo.projectId}/${vmInfo.instanceId}/available-metrics`, { credentials: "include" });
+      const res = await fetch(`/api/gcp/container/${containerInfo.projectId}/${containerInfo.region}/${containerName}/available-metrics`, { credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd pobierania listy metryk");
       setMetricsList(data.metrics || []);
@@ -84,16 +71,16 @@ const VMGCPMonitor = () => {
     } finally {
       setMetricsListLoading(false);
     }
-  }, [vmInfo]);
+  }, [containerInfo, containerName]);
   
   const fetchMetricData = useCallback(async (metricType) => {
-    if (!metricType || !vmInfo?.projectId || !vmInfo?.instanceId) return;
+    if (!metricType || !containerInfo?.projectId || !containerInfo?.region) return;
     
     setMetricDataLoading(true);
     setMetricDataError(null);
     setMetricData([]);
     try {
-      const res = await fetch(`/api/gcp/vm/${vmInfo.projectId}/${vmInfo.instanceId}/metrics`, {
+      const res = await fetch(`/api/gcp/container/${containerInfo.projectId}/${containerInfo.region}/${containerName}/metrics`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -110,52 +97,34 @@ const VMGCPMonitor = () => {
     } finally {
       setMetricDataLoading(false);
     }
-  }, [vmInfo]);
+  }, [containerInfo, containerName]);
 
   useEffect(() => {
-    fetchVmDetailsByName();
-  }, [fetchVmDetailsByName]);
+    fetchContainerDetailsByName();
+  }, [fetchContainerDetailsByName]);
 
   useEffect(() => {
-    if (vmInfo?.projectId && vmInfo?.instanceId) {
-      fetchAgentStatus();
+    if (containerInfo?.projectId && containerInfo?.region) {
       fetchAvailableMetrics();
     }
-  }, [vmInfo, fetchAgentStatus, fetchAvailableMetrics]);
+  }, [containerInfo, fetchAvailableMetrics]);
 
   useEffect(() => {
-    if (selectedMetric && vmInfo?.projectId) {
+    if (selectedMetric && containerInfo?.projectId) {
       fetchMetricData(selectedMetric);
     }
-  }, [selectedMetric, fetchMetricData, vmInfo?.projectId]);
-  
-  const installOpsAgent = async () => {
-    if (!vmInfo?.projectId || !vmInfo?.instanceId) return;
-    if (!window.confirm(`Zainstalować Ops Agent na VM "${vmName}"?`)) return;
-    try {
-      const res = await fetch(`/api/gcp/vm/${vmInfo.projectId}/${vmInfo.instanceId}/install-agent`, { 
-          method: "POST", 
-          credentials: "include" 
-        });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Błąd instalacji agenta");
-      alert(data.message); 
-      setAgentStatus("✅ Ops Agent");
-    } catch (err) {
-      alert("❌ " + err.message);
-    }
-  };
+  }, [selectedMetric, fetchMetricData, containerInfo?.projectId]);
 
   const handleLqlQuerySubmit = async () => {
-    if (!vmInfo?.projectId || !vmInfo?.instanceId) {
-      setLqlError("Nie udało się zidentyfikować projektu lub instancji.");
+    if (!containerInfo?.projectId) {
+      setLqlError("Nie udało się zidentyfikować projektu.");
       return;
     }
     setLqlLoading(true);
     setLqlError(null);
     setLqlResults([]);
     try {
-      const res = await fetch(`/api/gcp/vm/${vmInfo.projectId}/${vmInfo.instanceId}/logs/query`, {
+      const res = await fetch(`/api/gcp/container/${containerInfo.projectId}/${containerName}/logs/query`, {
         method: "POST",
         credentials: "include",
         headers: { "Content-Type": "application/json" },
@@ -185,11 +154,11 @@ const VMGCPMonitor = () => {
   };
   
   const fetchAlerts = useCallback(async () => {
-    if (!vmInfo?.projectId || !vmInfo?.instanceId) return;
+    if (!containerInfo?.projectId) return;
     setAlertsLoading(true);
     setAlertsError(null);
     try {
-      const res = await fetch(`/api/gcp/vm/${vmInfo.projectId}/${vmInfo.instanceId}/alerts`, { credentials: "include" });
+      const res = await fetch(`/api/gcp/container/${containerInfo.projectId}/${containerName}/alerts`, { credentials: "include" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Błąd pobierania alertów");
       setAlerts(data.value || []);
@@ -198,22 +167,22 @@ const VMGCPMonitor = () => {
     } finally {
       setAlertsLoading(false);
     }
-  }, [vmInfo]);
+  }, [containerInfo, containerName]);
 
   useEffect(() => {
-    if (activeTab === 'alerts' && vmInfo?.instanceId) {
+    if (activeTab === 'alerts' && containerInfo?.projectId) {
       fetchAlerts();
     }
-  }, [activeTab, fetchAlerts, vmInfo?.instanceId]);
+  }, [activeTab, fetchAlerts, containerInfo?.projectId]);
 
   const handleDeleteAlert = async (alertName) => {
-    if (!vmInfo?.projectId) return;
+    if (!containerInfo?.projectId) return;
     if (!window.confirm(`Czy na pewno chcesz usunąć alert '${alertName}'?`)) return;
     
     setAlertsLoading(true);
     setAlertsError(null);
     try {
-      const res = await fetch(`/api/gcp/vm/${vmInfo.projectId}/alerts/${alertName}`, {
+      const res = await fetch(`/api/gcp/container/${containerInfo.projectId}/alerts/${alertName}`, {
         method: "DELETE",
         credentials: "include"
       });
@@ -267,26 +236,21 @@ const VMGCPMonitor = () => {
 
   return (
     <div style={{ padding: "20px", maxWidth: "980px", margin: "0 auto" }}>
-      <button onClick={() => navigate("/virtual-machines")} style={btnStyle}>
+      <button onClick={() => navigate("/containers")} style={btnStyle}>
         ← Powrót
       </button>
 
-      <h1>Monitoring VM (GCP): {vmName}</h1>
+      <h1>Monitoring Kontenera (GCP): {containerName}</h1>
 
-      {loading ? ( <p>⏳ Wyszukiwanie i ładowanie danych VM: {vmName}...</p> )
-       : vmInfo?.error ? ( <p style={{ color: "red" }}>❌ Błąd krytyczny: {vmInfo.error}</p> )
+      {loading ? ( <p>⏳ Wyszukiwanie i ładowanie danych kontenera: {containerName}...</p> )
+       : containerInfo?.error ? ( <p style={{ color: "red" }}>❌ Błąd krytyczny: {containerInfo.error}</p> )
        : (
         <>
           <ul style={{ fontSize: "16px", lineHeight: "1.6", listStyle: 'none', paddingLeft: 0 }}>
-            <li><strong>Project ID:</strong> {vmInfo?.projectId || "—"}</li>
-            <li><strong>Strefa:</strong> {vmInfo?.zone || "—"}</li>
-            <li><strong>Nazwa VM:</strong> {vmName || "—"}</li>
-            <li><strong>ID Instancji:</strong> {vmInfo?.instanceId || "—"}</li>
-            <li><strong>Typ Maszyny:</strong> {vmInfo?.machineType || "—"}</li>
-            <li>
-              <strong>Status agenta:</strong> {agentStatus}
-              {agentStatus === "❌ Brak" && <button onClick={installOpsAgent} style={installButtonStyle}>🔧 Zainstaluj Ops Agent</button>}
-            </li>
+            <li><strong>Project ID:</strong> {containerInfo?.projectId || "—"}</li>
+            <li><strong>Region:</strong> {containerInfo?.region || "—"}</li>
+            <li><strong>Nazwa Usługi:</strong> {containerName || "—"}</li>
+            <li><strong>Resource ID:</strong> {containerInfo?.resourceName || "—"}</li>
           </ul>
 
           <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
@@ -325,7 +289,7 @@ const VMGCPMonitor = () => {
                    ) : ( <p>Brak danych dla wybranej metryki w ostatniej godzinie.</p> )
                   }
                 </>
-               ) : ( <p>Brak dostępnych metryk dla tej VM.</p> )
+               ) : ( <p>Brak dostępnych metryk dla tego kontenera.</p> )
               }
             </>
           )}
@@ -334,15 +298,15 @@ const VMGCPMonitor = () => {
             <div style={{ marginTop: "10px" }}>
               <h3>📁 Cloud Logging (LQL)</h3>
               <p style={{fontSize: '14px', color: '#666', margin: '5px 0'}}>
-                Wykonaj własne zapytanie LQL w ramach projektu {vmInfo.projectId}.
+                Wykonaj własne zapytanie LQL w ramach projektu {containerInfo.projectId}.
               </p>
               <textarea
                 value={lqlQuery}
                 onChange={(e) => setLqlQuery(e.target.value)}
                 style={{...createWsInputStyle, width: '100%', height: '100px', fontFamily: 'monospace'}}
-                placeholder={`resource.type="gce_instance"...`}
+                placeholder={`resource.type="cloud_run_revision"...`}
               />
-              <button onClick={handleLqlQuerySubmit} disabled={lqlLoading || !vmInfo.projectId} style={fetchLogButtonStyle}>
+              <button onClick={handleLqlQuerySubmit} disabled={lqlLoading || !containerInfo.projectId} style={fetchLogButtonStyle}>
                 {lqlLoading ? 'Wykonywanie...' : '🔍 Wykonaj zapytanie LQL'}
               </button>
 
@@ -360,35 +324,34 @@ const VMGCPMonitor = () => {
 
           {activeTab === "alerts" && (
             <div style={{ marginTop: "10px" }}>
-              <h3>🚨 Alerty dla {vmName}</h3>
+              <h3>🚨 Alerty dla {containerName}</h3>
               <button 
                 onClick={() => setShowCreateAlertModal(true)} 
                 style={buttonStyle}
               >
                 ➕ Utwórz nową regułę alertu
               </button>
-              {}
-              <CreateGcpAlertModal
+              
+               <CreateGcpAlertModal
                 isOpen={showCreateAlertModal}
                 onClose={() => setShowCreateAlertModal(false)}
                 onCreated={fetchAlerts}
-                vmInfo={vmInfo}
+                containerInfo={containerInfo} 
               /> 
               
               <div style={{ marginTop: "20px" }}>
-                <h4>Istniejące reguły alertów dla tej VM</h4>
+                <h4>Istniejące reguły alertów dla tego kontenera</h4>
                 <button onClick={fetchAlerts} style={refreshDcrButtonStyle} disabled={alertsLoading}>
                   {alertsLoading ? 'Odświeżanie...' : '🔄 Odśwież listę alertów'}
                 </button>
                 {alertsLoading ? ( <p>⏳ Ładowanie alertów...</p> )
                  : alertsError ? ( <p style={{ color: "red" }}>❌ {alertsError}</p> )
-                 : alerts.length === 0 ? ( <p>Brak alertów skonfigurowanych dla tej VM.</p> )
+                 : alerts.length === 0 ? ( <p>Brak alertów skonfigurowanych dla tego kontenera.</p> )
                  : (
                   <table style={logTableStyle}>
                     <thead>
                       <tr>
                         <th style={logThStyle}>Nazwa Alertu</th>
-                        <th style={logThStyle}>VM ID</th>
                         <th style={logThStyle}>Opis</th>
                         <th style={logThStyle}>Włączony</th>
                         <th style={logThStyle}>Akcje</th>
@@ -398,7 +361,6 @@ const VMGCPMonitor = () => {
                       {alerts.map((alert) => (
                         <tr key={alert.name}>
                           <td style={logTdStyle}>{alert.displayName}</td>
-                          <td style={logTdStyle}>{alert.name}</td>
                           <td style={logTdStyle}>{alert.description}</td>
                           <td style={logTdStyle}>{alert.enabled ? '✅ Tak' : '❌ Nie'}</td>
                           <td style={logTdStyle}>
@@ -444,4 +406,12 @@ const buttonStyle = {
   borderRadius: '8px', cursor: 'pointer', marginRight: '10px', marginBottom: '10px'
 };
 
-export default VMGCPMonitor;
+const createWsButtonStyle = { marginLeft: "8px", padding: "6px 10px", background: "#34A853", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
+const createWsFormStyle = { marginTop: "12px", padding: "12px", border: "1px solid #eee", borderRadius: "8px"};
+const createWsGridStyle = { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px"};
+const createWsLabelStyle = { fontSize: 13 };
+const createWsBtnContainerStyle = { marginTop: "12px", display: "flex", gap: "8px"};
+const createWsSubmitStyle = { padding: "8px 12px", background: "#4285F4", color: "white", border: "none", borderRadius: "6px", cursor: "pointer"};
+const createWsCancelStyle = { padding: "8px 12px", background: "#E2E8F0", color: "#111", border: "none", borderRadius: "6px", cursor: "pointer"};
+
+export default ContainerGCPMonitor;

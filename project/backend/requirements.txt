@@ -28,6 +28,10 @@ google-cloud-compute
 google-cloud-run
 google-cloud-monitoring
 google-cloud-os-config
+google-cloud-logging
+google-cloud-monitoring
+
+
 
 six
 packaging

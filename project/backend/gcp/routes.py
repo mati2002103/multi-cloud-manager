@@ -7,13 +7,16 @@ from .vm import list_gcp_vms, delete_gcp_vm, create_gcp_vm
 from .containers import list_gcp_containers, delete_gcp_container, create_gcp_container
 from .vpcs import list_gcp_vpcs, create_gcp_vpc, create_gcp_subnet
 
-# ZMIANA: Zaimportuj wszystkie funkcje monitorowania
 from .vmmonitor import (
     find_vm_by_name, get_available_metrics, get_metric_timeseries,
     get_vm_agent_status, install_ops_agent, query_lql_logs, 
     list_vm_alerts, create_gcp_alert, delete_gcp_alert
 )
 
+from .containermonitor import (
+    find_gcp_container_details,get_gcp_container_available_metrics,get_gcp_container_metric_data,query_gcp_container_logs,
+    list_gcp_container_alerts,create_gcp_container_alert,delete_gcp_container_alert
+)
 gcp_api = Blueprint("gcp_api", __name__)
 
 # account and projects
@@ -48,30 +51,22 @@ gcp_api.route("/api/gcp/create_gcp_vpc", methods=["POST"])(create_gcp_vpc)
 # subnet
 gcp_api.route("/api/gcp/create_gcp_subnet", methods=["POST"])(create_gcp_subnet)
 
-
-# Znajdź VM po nazwie (zwraca ID projektu, strefę, ID instancji itp.)
+#VM monitor
 gcp_api.route("/api/gcp/vm/by-name/<string:vm_name>/details", methods=["GET"])(find_vm_by_name)
-
-# Pobierz listę dostępnych metryk dla VM (hardkodowana lista)
 gcp_api.route("/api/gcp/vm/<string:project_id>/<string:instance_id>/available-metrics", methods=["GET"])(get_available_metrics)
-
-# Pobierz dane szeregów czasowych dla konkretnej metryki
 gcp_api.route("/api/gcp/vm/<string:project_id>/<string:instance_id>/metrics", methods=["POST"])(get_metric_timeseries)
-
-# Sprawdź status agenta
 gcp_api.route("/api/gcp/vm/<string:project_id>/<string:instance_id>/agent-status", methods=["GET"])(get_vm_agent_status)
-
-# Zainstaluj agenta
 gcp_api.route("/api/gcp/vm/<string:project_id>/<string:instance_id>/install-agent", methods=["POST"])(install_ops_agent)
-
-# Wykonaj zapytanie LQL
 gcp_api.route("/api/gcp/vm/<string:project_id>/<string:instance_id>/logs/query", methods=["POST"])(query_lql_logs)
-
-# Listuj alerty dla VM
 gcp_api.route("/api/gcp/vm/<string:project_id>/<string:instance_id>/alerts", methods=["GET"])(list_vm_alerts)
-
-# Twórz alerty dla VM
 gcp_api.route("/api/gcp/vm/<string:project_id>/<string:instance_id>/create-alert", methods=["POST"])(create_gcp_alert)
-
-# Usuń alert
 gcp_api.route("/api/gcp/vm/<string:project_id>/alerts/<string:alert_name>", methods=["DELETE"])(delete_gcp_alert)
+
+#Container Monitor
+gcp_api.route("/api/gcp/container/by-name/<string:container_name>/details", methods=["GET"])(find_gcp_container_details)
+gcp_api.route("/api/gcp/container/<string:project_id>/<string:region>/<string:container_name>/available-metrics", methods=["GET"])(get_gcp_container_available_metrics)
+gcp_api.route("/api/gcp/container/<string:project_id>/<string:region>/<string:container_name>/metrics", methods=["POST"])(get_gcp_container_metric_data)
+gcp_api.route("/api/gcp/container/<string:project_id>/<string:container_name>/logs/query", methods=["POST"])(query_gcp_container_logs)
+gcp_api.route("/api/gcp/container/<string:project_id>/<string:container_name>/alerts", methods=["GET"])(list_gcp_container_alerts)
+gcp_api.route("/api/gcp/container/<string:project_id>/<string:region>/<string:container_name>/create-alert", methods=["POST"])(create_gcp_container_alert)
+gcp_api.route("/api/gcp/container/<string:project_id>/alerts/<string:alert_name>", methods=["DELETE"])(delete_gcp_container_alert)

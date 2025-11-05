@@ -11,6 +11,7 @@ import VMMonitor from "./pages/VmMonitor";
 import VMGCPMonitor from "./pages/VMGCPMonitor";
 
 import ContainerMonitor from "./pages/ContainerMonitor";
+import GCPContainerMonitor from "./pages/ContainerGCPMonitor";
 
 import StorageBlobContainers from "./pages/StorageBlobContainers";
 import Storage from "./pages/Storage";
@@ -55,6 +56,7 @@ function App() {
                     <Route path="/container/:containerId/monitoring" element={<ContainerMonitor />} />
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
                     <Route path="/vm/gcp/:vmName/monitoring" element={<VMGCPMonitor />} />
+                    <Route path="/container/gcp/:containerName/monitoring" element={<GCPContainerMonitor />} />
                     <Route path="/storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />
                     <Route path="/storage/gcp/:bucketName" element={<GCPBucketContents />} />

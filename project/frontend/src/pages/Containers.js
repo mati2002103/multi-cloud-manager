@@ -199,6 +199,7 @@ const Containers = () => {
                 <th>Region</th>
                 <th>URL Punktu Końcowego</th>
                 <th>Utworzono</th>
+                <th>Monitor</th>
                 <th>Akcje</th>
               </tr>
             </thead>
@@ -209,6 +210,11 @@ const Containers = () => {
                   <td style={cellStyle}>{service.region}</td>
                   <td style={cellStyle}><a href={service.url} target="_blank" rel="noopener noreferrer">{service.url}</a></td>
                   <td style={cellStyle}>{service.created ? new Date(service.created).toLocaleString() : '—'}</td>
+                   <td style={cellStyle}>
+                    <span style={{ cursor: "pointer" }} onClick={() => navigate(`/container/gcp/${service.name}/monitoring`)}>
+                      📈
+                    </span>
+                  </td>
                   <td style={cellStyle}>
                     <button onClick={() => handleDeleteGCP(service)} title="Usuń usługę">🗑️</button>
                   </td>
