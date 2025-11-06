@@ -31,6 +31,9 @@ google-cloud-os-config
 google-cloud-logging
 google-cloud-monitoring
 
+boto3
+
+
 
 
 six

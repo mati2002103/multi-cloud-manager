@@ -12,7 +12,7 @@ def create_app():
     from auth.routes import auth_bp
     from azure_modules.routes import azure_bp_module
     from gcp.routes import gcp_api
-
+    
     
     app.register_blueprint(gcp_api)
     app.register_blueprint(auth_bp)
