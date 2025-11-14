@@ -1,9 +1,9 @@
 import React, { useEffect, useState } from "react";
-
+import { useNavigate } from 'react-router-dom';
 const Accounts = () => {
   const [accounts, setAccounts] = useState([]);
   const [loading, setLoading] = useState(true);
-
+  const navigate = useNavigate();
   const refresh = async () => {
     setLoading(true);
     let allAccounts = [];
@@ -37,7 +37,7 @@ const Accounts = () => {
   };
 
   const addAwsAccount = () => {
-    alert("Not done yet 🚀");
+    navigate('/connect/aws');
   };
 
   const addGcpAccount = () => {
@@ -85,6 +85,15 @@ const Accounts = () => {
           ) : (
             <p>Brak subskrypcji</p>
           )}
+        </>
+      );
+    }
+    if (acc.provider === "aws") {
+      return (
+        <>
+          <p>Provider: <strong>AWS (Amazon Web Services)</strong></p>
+          {acc.accountId && <p>Account ID: <strong>{acc.accountId}</strong></p>}
+          {acc.roleArn && <p>Używana rola (ARN): <strong>{acc.roleArn}</strong></p>}
         </>
       );
     }

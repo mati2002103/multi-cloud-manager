@@ -8,11 +8,16 @@ import Subscriptions from "./pages/Subscriptions";
 import Accounts from "./pages/Accounts";
 import Networks from "./pages/Networks";
 import VMMonitor from "./pages/VmMonitor";
+import VMGCPMonitor from "./pages/VMGCPMonitor";
+
 import ContainerMonitor from "./pages/ContainerMonitor";
+import GCPContainerMonitor from "./pages/ContainerGCPMonitor";
 
 import StorageBlobContainers from "./pages/StorageBlobContainers";
 import Storage from "./pages/Storage";
 import GCPBucketContents from "./pages/GCPBucketContents";
+
+import ConnectAws from "./pages/ConnectAWS";
 import Home from "./pages/Home";
 
 function App() {
@@ -34,11 +39,9 @@ function App() {
   return (
     <Router>
       <Routes>
-        {/* Landing Page bez sidebara */}
         <Route path="/" element={<Home user={user} />} />
 
         {user.logged_in ? (
-          // Dla chronionych tras renderujemy layout z sidebar i main
           <Route
             path="/*"
             element={
@@ -54,13 +57,17 @@ function App() {
                     <Route path="/accounts" element={<Accounts />} />
                     <Route path="/container/:containerId/monitoring" element={<ContainerMonitor />} />
                     <Route path="/vm/:vmId/monitoring" element={<VMMonitor />} />
+                    <Route path="/vm/gcp/:vmName/monitoring" element={<VMGCPMonitor />} />
+                    <Route path="/container/gcp/:containerName/monitoring" element={<GCPContainerMonitor />} />
                     <Route path="/storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />
                     <Route path="/storage/gcp/:bucketName" element={<GCPBucketContents />} />
+
+                    <Route path="/connect/aws" element={<ConnectAws />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />
                   </Routes>
                 </main>
-              </div>
+              </div> 
             }
           />
         ) : (

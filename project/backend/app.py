@@ -4,7 +4,7 @@ from flask_cors import CORS
 
 def create_app():
     app = Flask(__name__)
-    app.secret_key = "super-secret-key"  # lub z .env
+    app.secret_key = "super-secret-key"  
     
     CORS(app, supports_credentials=True, origins=["http://localhost:3000"])
     
@@ -12,7 +12,7 @@ def create_app():
     from auth.routes import auth_bp
     from azure_modules.routes import azure_bp_module
     from gcp.routes import gcp_api
-
+    
     
     app.register_blueprint(gcp_api)
     app.register_blueprint(auth_bp)

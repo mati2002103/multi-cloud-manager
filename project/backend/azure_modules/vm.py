@@ -81,7 +81,6 @@ def create_vm():
             resource_client.resource_groups.create_or_update(
                 rg_name, {"location": location})
 
-        # Create Network Resources
         network_client = NetworkManagementClient(credential, subscription_id)
         vnet_name = f"{vm_name}-vnet"
         subnet_name = f"{vm_name}-subnet"

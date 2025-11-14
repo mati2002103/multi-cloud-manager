@@ -26,6 +26,17 @@ google-cloud-resource-manager
 google-auth[requests]
 google-cloud-compute
 google-cloud-run
+google-cloud-monitoring
+google-cloud-os-config
+google-cloud-logging
+google-cloud-monitoring
+
+boto3
+
+
+
 
 six
 packaging
+pytz
+importlib-metadata

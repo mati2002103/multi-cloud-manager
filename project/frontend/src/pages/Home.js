@@ -4,6 +4,10 @@ const Home = () => {
   const handleLogin = () => {
     window.location.href = "http://localhost:5000/api/login/azure"; 
   };
+    const addGcpAccount = () => {
+    window.location.href = 'http://localhost:5000/api/login/google';
+  };
+
 
   return (
     <div
@@ -37,12 +41,28 @@ const Home = () => {
           fontSize: "1rem",
           fontWeight: "bold",
           transition: "0.3s",
+          margin: "10px",
         }}
         onMouseOver={(e) => (e.target.style.backgroundColor = "#f3f4f6")}
         onMouseOut={(e) => (e.target.style.backgroundColor = "#fff")}
       >
         Zaloguj się przez Microsoft
       </button>
+              <button onClick={addGcpAccount} style={{ 
+                padding: "12px 24px",
+                background: "#0ebc05ff", 
+                fontSize: "1rem",
+                fontWeight: "bold",
+                transition: "0.3s",
+                margin: "10px",
+                color: "white", 
+                border: "none", 
+                borderRadius: "8px",
+                cursor: "pointer",
+                 }}>
+          Zaloguj się do GCP
+        </button>
+
     </div>
   );
 };
