@@ -30,5 +30,4 @@ def get_aws_credentials():
         ExternalId=external_id
     )
     
-    # 3. Zwróć tymczasowe poświadczenia
     return assumed_role_object['Credentials']

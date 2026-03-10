@@ -119,7 +119,7 @@ const Accounts = () => {
         <button onClick={addAzureAccount} style={{ padding: "10px", flex: 1, background: "#0078D4", color: "white", border: "none", borderRadius: "8px" }}>
           Dodaj konto Azure
         </button>
-        <button onClick={addAwsAccount} style={{ padding: "10px", flex: 1, background: "#FF9900", color: "black", border: "none", borderRadius: "8px" }}>
+        <button onClick={addAwsAccount} style={{ padding: "10px", flex: 1, background: "#FF9900", color: "white", border: "none", borderRadius: "8px" }}>
           Dodaj konto AWS
         </button>
         <button onClick={addGcpAccount} style={{ padding: "10px", flex: 1, background: "#19cc0fff", color: "white", border: "none", borderRadius: "8px" }}>

@@ -16,6 +16,7 @@ import GCPContainerMonitor from "./pages/ContainerGCPMonitor";
 import StorageBlobContainers from "./pages/StorageBlobContainers";
 import Storage from "./pages/Storage";
 import GCPBucketContents from "./pages/GCPBucketContents";
+import AWSS3BucketContents from "./pages/AWSS3BucketContents";
 
 import ConnectAws from "./pages/ConnectAWS";
 import Home from "./pages/Home";
@@ -62,6 +63,7 @@ function App() {
                     <Route path="/storage" element={<Storage />} />
                     <Route path="/storage/:name" element={<StorageBlobContainers />} />
                     <Route path="/storage/gcp/:bucketName" element={<GCPBucketContents />} />
+                    <Route path="/storage/aws/:bucketName" element={<AWSS3BucketContents />} />
 
                     <Route path="/connect/aws" element={<ConnectAws />} />
                     <Route path="*" element={<Navigate to="/dashboard" />} />

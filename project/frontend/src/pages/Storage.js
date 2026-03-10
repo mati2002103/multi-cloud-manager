@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import CreateStorageAccountModal from "../components/CreateStorageAccountModal";
 import CreateBucketGCPModal from "../components/CreateBucketGCPModal";
+import CreateBucketAWSModal from "../components/CreateBucketAWSModal";
 
 const Storage = () => {
   const [azureAccounts, setAzureAccounts] = useState([]);
@@ -12,8 +13,13 @@ const Storage = () => {
   const [gcpLoading, setGcpLoading] = useState(true);
   const [gcpError, setGcpError] = useState(null);
 
+  const [awsBuckets, setAwsBuckets] = useState([]);
+  const [awsLoading, setAwsLoading] = useState(true);
+  const [awsError, setAwsError] = useState(null);
+
   const [showAzureModal, setShowAzureModal] = useState(false);
   const [showGCPModal, setShowGCPModal] = useState(false);
+  const [showAWSModal, setShowAWSModal] = useState(false);
   const navigate = useNavigate();
 
   const fetchAzureAccounts = async () => {
@@ -57,7 +63,27 @@ const Storage = () => {
   useEffect(() => {
     fetchAzureAccounts();
     fetchGCPBuckets();
+    fetchAWSBuckets();
   }, []);
+
+  const fetchAWSBuckets = async () => {
+    setAwsLoading(true);
+    setAwsError(null);
+    try {
+      const res = await fetch("/api/aws/list_buckets", { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `Błąd HTTP: ${res.status}` }));
+        throw new Error(data.error || `Błąd HTTP: ${res.status}`);
+      }
+      const data = await res.json();
+      setAwsBuckets(data.value || []);
+    } catch (err) {
+      console.error("Błąd pobierania danych z AWS:", err);
+      setAwsError(err.message);
+    } finally {
+      setAwsLoading(false);
+    }
+  };
 
   const handleDeleteAzure = async (account) => {
     if (!window.confirm(`Czy na pewno chcesz usunąć Storage Account "${account.name}"?`)) return;
@@ -111,12 +137,42 @@ const Storage = () => {
     }
   };
 
+  const handleDeleteAWS = async (bucket) => {
+    const confirmMessage = `Aby usunąć bucket "${bucket.name}" wraz z CAŁĄ ZAWARTOŚCIĄ, wpisz jego nazwę poniżej. Ta operacja jest NIEODWRACALNA.`;
+    const userInput = window.prompt(confirmMessage);
+
+    if (userInput !== bucket.name) {
+      if (userInput !== null) {
+        alert("Nazwa bucketa nie zgadza się. Anulowano usuwanie.");
+      }
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/aws/delete_bucket", {
+        method: "DELETE",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bucketName: bucket.name,
+          force: true,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Błąd usuwania bucketa");
+      alert(`✅ ${data.message}`);
+      fetchAWSBuckets();
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  };
+
   return (
     <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
       <h1>📦 Zasoby Storage (Multi-Cloud)</h1>
-      <p>Lista wszystkich kont Storage (Azure) i bucketów (GCP) w Twoim środowisku.</p>
+      <p>Lista wszystkich kont Storage (Azure), bucketów (GCP) i bucketów S3 (AWS) w Twoim środowisku.</p>
       
-      <button onClick={() => { fetchAzureAccounts(); fetchGCPBuckets(); }} style={buttonStyle}>
+      <button onClick={() => { fetchAzureAccounts(); fetchGCPBuckets(); fetchAWSBuckets(); }} style={buttonStyle}>
         🔄 Odśwież wszystko
       </button>
 
@@ -249,8 +305,78 @@ const Storage = () => {
           </table>
         )}
       </div>
+
+      <div style={{ marginTop: '30px', marginBottom: '40px' }}>
+        <h2>Amazon S3 Buckets (AWS)</h2>
+        <button onClick={() => setShowAWSModal(true)} style={buttonStyleAWS}>
+          ➕ Utwórz Bucket S3 (AWS)
+        </button>
+        <CreateBucketAWSModal
+          isOpen={showAWSModal}
+          onClose={() => setShowAWSModal(false)}
+          onCreated={fetchAWSBuckets}
+        />
+        {awsLoading ? (
+          <p>⏳ Ładowanie danych z AWS...</p>
+        ) : awsError ? (
+          <p style={{ color: "red" }}>❌ Błąd AWS: {awsError}</p>
+        ) : awsBuckets.length === 0 ? (
+          <p>Brak dostępnych bucketów S3 w AWS (lub nie jesteś zalogowany).</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr style={{ backgroundColor: "#FFF3E0" }}>
+                <th style={thStyle}>Nazwa Bucketa</th>
+                <th style={thStyle}>Region</th>
+                <th style={thStyle}>Utworzony</th>
+                <th style={thStyle}>Obiekty</th>
+                <th style={thStyle}>Rozmiar</th>
+                <th style={thStyle}>Wersjonowanie</th>
+                <th style={thStyle}>Szyfrowanie</th>
+                <th style={thStyle}>Akcje</th>
+              </tr>
+            </thead>
+            <tbody>
+              {awsBuckets.map((bucket, idx) => (
+                <tr key={idx}>
+                  <td style={tdStyle}>{bucket.name}</td>
+                  <td style={tdStyle}>{bucket.region}</td>
+                  <td style={tdStyle}>{bucket.creationDate ? new Date(bucket.creationDate).toLocaleDateString() : '—'}</td>
+                  <td style={tdStyle}>{bucket.objectCount}</td>
+                  <td style={tdStyle}>{bucket.totalSize}</td>
+                  <td style={tdStyle}>{bucket.versioning}</td>
+                  <td style={tdStyle}>{bucket.encryption}</td>
+                  <td style={tdStyle}>
+                    <button
+                      onClick={() => {
+                        sessionStorage.setItem("selectedAWSBucket", JSON.stringify(bucket));
+                        navigate(`/storage/aws/${bucket.name}`, { state: bucket });
+                      }}
+                      title="Pokaż obiekty"
+                    >
+                      📂
+                    </button>
+                    <button onClick={() => handleDeleteAWS(bucket)} title="Usuń" style={{ marginLeft: "5px" }}>🗑️</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
     </div>
   );
+};
+
+const buttonStyleAWS = {
+  padding: "10px",
+  background: "#FF9900",
+  color: "white",
+  border: "none",
+  borderRadius: "8px",
+  cursor: "pointer",
+  marginBottom: "20px",
+  marginRight: "10px"
 };
 
 const buttonStyle = {
