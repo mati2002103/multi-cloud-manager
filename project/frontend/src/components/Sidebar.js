@@ -51,6 +51,7 @@ const styles = {
     backgroundColor: "#1a202c",
     color: "#fff",
     padding: "16px 10px",
+    boxSizing: "border-box",
     display: "flex",
     flexDirection: "column",
     justifyContent: "space-between", 

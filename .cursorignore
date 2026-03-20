@@ -1,0 +1,124 @@
+# Zależności i pakiety (Najwięksi pożeracze tokenów)
+node_modules/
+vendor/
+venv/
+.venv/
+env/
+__pycache__/
+
+# Pliki blokujące menedżerów pakietów (gigantyczne i bezużyteczne dla AI)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+poetry.lock
+Cargo.lock
+Gemfile.lock
+
+# Foldery z wersją zbudowaną/produkcyjną
+dist/
+build/
+out/
+.next/
+.nuxt/
+target/
+bin/
+obj/
+
+# Bazy danych, logi i duże pliki z danymi
+*.log
+*.sql
+*.sqlite
+*.db
+*.csv
+*.tsv
+*.dump
+logs/
+
+# Multimedia i grafika (często czytane przez AI jako tekst Base64)
+*.svg
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico
+*.mp4
+*.mp3
+*.wav
+
+# Pliki konfiguracyjne IDE i systemu
+.git/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# (Opcjonalnie) Ogromne pliki konfiguracyjne, których nie chcesz zmieniać
+# tailwind.config.js 
+# tsconfig.json
+
+# ==========================================
+# REACT / FRONTEND (Najwięksi pożeracze!)
+# ==========================================
+node_modules/
+build/
+dist/
+out/
+coverage/
+
+# Pliki blokujące menedżerów pakietów
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Cache i pliki tymczasowe frontendu
+.eslintcache
+.npm/
+
+# ==========================================
+# FLASK / PYTHON / BACKEND
+# ==========================================
+# Środowiska wirtualne (Absolutnie kluczowe do zignorowania)
+venv/
+.venv/
+env/
+.env_folder/
+
+# Skompilowany kod Pythona
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Bazy danych (Flask często używa SQLite lokalnie)
+*.sqlite
+*.sqlite3
+*.db
+instance/
+
+# Narzędzia testowe i cache
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.mypy_cache/
+.ruff_cache/
+
+# Logi
+*.log
+logs/
+
+# ==========================================
+# PLIKI SYSTEMOWE I MULTIMEDIA
+# ==========================================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Zignoruj grafiki z folderów np. public/ w Reakcie
+*.svg
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.ico

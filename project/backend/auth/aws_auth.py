@@ -84,8 +84,11 @@ def add_aws_account():
             accounts.append(new_aws_account)
 
         session["accounts"] = accounts
+        # Allow AWS-only login: if no user in session yet, set a minimal user so frontend sees logged_in
+        if not session.get("user"):
+            session["user"] = {"name": "Konto AWS"}
         session.modified = True
-        
+
         return jsonify({"message": f"Konto AWS {user_account_id} pomyślnie dodane."}), 201
 
     except ClientError as e:

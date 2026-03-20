@@ -3,6 +3,8 @@ import CreateVnetModal from "../components/CreateVnetModal";
 import CreateSubnetModal from "../components/CreateSubnetModal";
 import CreateGCPVPCModal from "../components/CreateGCPVPCModal";
 import CreateGCPSubnetModal from "../components/CreateGCPSubnetModal";
+import CreateAWSVPCModal from "../components/CreateAWSVPCModal";
+import CreateAWSSubnetModal from "../components/CreateAWSSubnetModal";
 
 const VirtualNetworks = () => {
   const [vnets, setVnets] = useState([]);
@@ -19,6 +21,33 @@ const VirtualNetworks = () => {
   const [showGCPSubnetModal, setShowGCPSubnetModal] = useState(false);
   const [selectedGcpVpc, setSelectedGcpVpc] = useState(null);
   const [expandedGcpSubnets, setExpandedGcpSubnets] = useState({});
+
+  const [awsVpcs, setAwsVpcs] = useState([]);
+  const [loadingAws, setLoadingAws] = useState(true);
+  const [errorAws, setErrorAws] = useState(null);
+  const [showAWSVPCModal, setShowAWSVPCModal] = useState(false);
+  const [showAWSSubnetModal, setShowAWSSubnetModal] = useState(false);
+  const [selectedAwsVpc, setSelectedAwsVpc] = useState(null);
+  const [expandedAwsSubnets, setExpandedAwsSubnets] = useState({});
+
+  const fetchAwsVpcs = async () => {
+    setLoadingAws(true);
+    setErrorAws(null);
+    try {
+      const res = await fetch("/api/aws/vpcs", { credentials: "include" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ error: `Błąd HTTP: ${res.status}` }));
+        throw new Error(data.error || `Błąd HTTP: ${res.status}`);
+      }
+      const data = await res.json();
+      setAwsVpcs(data.value || []);
+    } catch (err) {
+      console.error("Błąd pobierania VPC AWS:", err);
+      setErrorAws(err.message);
+    } finally {
+      setLoadingAws(false);
+    }
+  };
 
   const fetchAzureVnets = async () => {
     setLoadingAzure(true);
@@ -61,6 +90,7 @@ const VirtualNetworks = () => {
   useEffect(() => {
     fetchAzureVnets();
     fetchGcpVpcs();
+    fetchAwsVpcs();
   }, []);
 
   const toggleGcpSubnets = (vpcId) => {
@@ -70,15 +100,23 @@ const VirtualNetworks = () => {
     }));
   };
 
+  const toggleAwsSubnets = (vpcId) => {
+    setExpandedAwsSubnets(prev => ({
+      ...prev,
+      [vpcId]: !prev[vpcId]
+    }));
+  };
+
   return (
     <div style={{ padding: "20px", maxWidth: "1200px", margin: "0 auto" }}>
       <h1>🌐 Sieci Wirtualne (Multi-Cloud)</h1>
-      <p>Lista VNetów (Azure) i sieci VPC (GCP) w Twoich środowiskach.</p>
+      <p>Lista VNetów (Azure), sieci VPC (GCP) i sieci VPC (AWS) w Twoich środowiskach.</p>
 
       <button
         onClick={() => {
           fetchAzureVnets();
           fetchGcpVpcs();
+          fetchAwsVpcs();
         }}
         style={buttonStyle}
       >
@@ -226,6 +264,90 @@ const VirtualNetworks = () => {
                        >
                           ➕ Dodaj Subnet
                        </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div>
+        <h2>Amazon VPC Networks</h2>
+        <button onClick={() => setShowAWSVPCModal(true)} style={buttonStyle}>
+          ➕ Dodaj VPC (AWS)
+        </button>
+        <CreateAWSVPCModal
+          isOpen={showAWSVPCModal}
+          onClose={() => setShowAWSVPCModal(false)}
+          onCreated={fetchAwsVpcs}
+        />
+        <CreateAWSSubnetModal
+          isOpen={showAWSSubnetModal}
+          onClose={() => setShowAWSSubnetModal(false)}
+          onCreated={fetchAwsVpcs}
+          vpc={selectedAwsVpc}
+        />
+
+        {loadingAws ? (
+          <p>⏳ Ładowanie VPC AWS...</p>
+        ) : errorAws ? (
+          <p style={{ color: "red" }}>❌ Błąd AWS: {errorAws}</p>
+        ) : awsVpcs.length === 0 ? (
+          <p>Brak dostępnych sieci VPC w AWS.</p>
+        ) : (
+          <table style={tableStyle}>
+            <thead>
+              <tr style={headerStyle}>
+                <th>Nazwa VPC</th>
+                <th>Region</th>
+                <th>CIDR</th>
+                <th>Subnety</th>
+                <th>Akcje</th>
+              </tr>
+            </thead>
+            <tbody>
+              {awsVpcs.map((vpc, idx) => {
+                const isExpanded = !!expandedAwsSubnets[vpc.vpcId];
+                return (
+                  <tr key={`aws-${idx}`}>
+                    <td style={cellStyle}>{vpc.name}</td>
+                    <td style={cellStyle}>{vpc.region}</td>
+                    <td style={cellStyle}>{vpc.cidrBlock || "—"}</td>
+                    <td style={cellStyle}>
+                      {vpc.subnets && vpc.subnets.length > 0 ? (
+                        <>
+                          <span style={{ marginRight: "10px" }}>
+                            {vpc.subnets.length} {vpc.subnets.length === 1 ? "subnet" : "subnetów"}
+                          </span>
+                          <button onClick={() => toggleAwsSubnets(vpc.vpcId)} style={toggleButtonStyle}>
+                            {isExpanded ? "Ukryj ▲" : "Pokaż ▼"}
+                          </button>
+                          {isExpanded && (
+                            <ul style={subnetListStyle}>
+                              {vpc.subnets.map((subnet, sIdx) => (
+                                <li key={sIdx}>
+                                  {subnet.name} ({subnet.availabilityZone}): {subnet.ipCidrRange}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                    <td style={cellStyle}>
+                      <button
+                        onClick={() => {
+                          setSelectedAwsVpc(vpc);
+                          setShowAWSSubnetModal(true);
+                        }}
+                        style={subnetButtonStyle}
+                      >
+                        ➕ Dodaj Subnet
+                      </button>
                     </td>
                   </tr>
                 );
