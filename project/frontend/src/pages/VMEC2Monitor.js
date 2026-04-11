@@ -39,7 +39,9 @@ const VMEC2Monitor = () => {
   const [logQueried, setLogQueried] = useState(false);
   const [agentStatus, setAgentStatus] = useState("⏳ sprawdzanie");
   const [agentDetails, setAgentDetails] = useState("");
+  const [ssmConnected, setSsmConnected] = useState(null);
   const [installingAgent, setInstallingAgent] = useState(false);
+  const [attachingSsmProfile, setAttachingSsmProfile] = useState(false);
 
   const [alerts, setAlerts] = useState([]);
   const [alertsLoading, setAlertsLoading] = useState(false);
@@ -76,9 +78,11 @@ const VMEC2Monitor = () => {
       if (!res.ok) throw new Error(data.error || "Błąd pobierania statusu agenta");
       setAgentStatus(data.status || "Nieznany");
       setAgentDetails(data.details || "");
+      setSsmConnected(typeof data.ssmConnected === "boolean" ? data.ssmConnected : null);
     } catch (err) {
       setAgentStatus("❌ błąd statusu agenta");
       setAgentDetails(err.message || "");
+      setSsmConnected(null);
     }
   }, [instanceId, vmInfo?.region]);
 
@@ -292,9 +296,44 @@ const VMEC2Monitor = () => {
             <li><strong>Strefa:</strong> {vmInfo?.availabilityZone ?? "—"}</li>
             <li><strong>IP (prywatny):</strong> {vmInfo?.privateIpAddress ?? "—"}</li>
             <li><strong>IP (publiczny):</strong> {vmInfo?.publicIpAddress ?? "—"}</li>
+            <li><strong>Profil IAM:</strong> {vmInfo?.iamInstanceProfileArn ?? "— (brak)"}</li>
             <li><strong>CloudWatch Agent:</strong> {agentStatus}</li>
           </ul>
-          <div style={{ marginBottom: "14px", display: "flex", gap: "10px", alignItems: "center" }}>
+          <div style={{ marginBottom: "14px", display: "flex", flexWrap: "wrap", gap: "10px", alignItems: "center" }}>
+            {ssmConnected === false && !vmInfo?.iamInstanceProfileArn ? (
+              <button
+                onClick={async () => {
+                  if (!vmInfo?.region) return;
+                  setAttachingSsmProfile(true);
+                  try {
+                    const res = await fetch(
+                      `/api/aws/ec2/${encodeURIComponent(instanceId)}/attach-ssm-profile`,
+                      {
+                        method: "POST",
+                        credentials: "include",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ region: vmInfo.region }),
+                      }
+                    );
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Nie udało się dołączyć profilu SSM");
+                    alert(data.message + (data.hint ? `\n\n${data.hint}` : ""));
+                    setTimeout(() => {
+                      fetchVmDetails();
+                      fetchAgentStatus();
+                    }, 2000);
+                  } catch (err) {
+                    alert(`❌ ${err.message}`);
+                  } finally {
+                    setAttachingSsmProfile(false);
+                  }
+                }}
+                style={{ ...fetchLogButtonStyle, background: "#2B6CB0" }}
+                disabled={attachingSsmProfile || !vmInfo?.region}
+              >
+                {attachingSsmProfile ? "Dołączanie profilu..." : "🔐 Dołącz profil IAM (SSM + CloudWatch)"}
+              </button>
+            ) : null}
             <button
               onClick={async () => {
                 if (!vmInfo?.region) return;
@@ -313,7 +352,7 @@ const VMEC2Monitor = () => {
                     }
                   );
                   const data = await res.json();
-                  if (!res.ok) throw new Error(data.error || "Błąd instalacji agenta");
+                  if (!res.ok) throw new Error((data.hint ? `${data.error}\n\n${data.hint}` : data.error) || "Błąd instalacji agenta");
                   alert(`${data.message} (commandId: ${data.commandId})`);
                   setTimeout(() => fetchAgentStatus(), 4000);
                 } catch (err) {

@@ -245,7 +245,7 @@ def get_ec2_agent_status(instance_id):
                 "ssmConnected": False,
                 "agentInstalled": False,
                 "status": "SSM unavailable",
-                "details": "Instancja nie jest zarządzana przez SSM (brak AmazonSSMManagedInstanceCore lub agent SSM nieaktywny).",
+                "details": "Instancja nie jest w Fleet Manager / SSM (brak roli z AmazonSSMManagedInstanceCore lub agent SSM nie działa). Nowe VM z aplikacji mają profil + bootstrap; istniejące bez profilu: attach-ssm-profile w API.",
             }), 200
 
         ping_status = info_list[0].get("PingStatus")
@@ -344,7 +344,7 @@ def install_ec2_agent(instance_id):
             return jsonify({
                 "error": "Instancja nie jest zarządzana przez SSM (brak online w describe_instance_information).",
                 "ssmConnected": False,
-                "hint": "Upewnij się, że instancja ma rolę z 'AmazonSSMManagedInstanceCore' oraz że SSM agent jest uruchomiony na instancji.",
+                "hint": "Potrzebny profil IAM z AmazonSSMManagedInstanceCore oraz działający agent SSM. Nowe VM z aplikacji dostają to automatycznie. Istniejąca instancja bez profilu IAM: POST /api/aws/ec2/<id>/attach-ssm-profile. Ubuntu bez agenta: zainstaluj pakiet SSM (SSH) lub utwórz nową instancję z aplikacji.",
             }), 400
 
         ping_status = (info_list[0] or {}).get("PingStatus")

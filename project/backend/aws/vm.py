@@ -1,6 +1,11 @@
 from flask import jsonify, request, session
 from .utils import get_aws_credentials
 import traceback
+import json
+import base64
+import time
+
+from botocore.exceptions import ClientError
 
 
 def list_ec2_instances():
@@ -67,6 +72,7 @@ def get_ec2_instance_details(instance_id):
                         if tag.get("Key") == "Name":
                             name = tag.get("Value")
                             break
+                    iam_prof = inst.get("IamInstanceProfile") or {}
                     return jsonify({
                         "instanceId": inst["InstanceId"],
                         "name": name or inst["InstanceId"],
@@ -77,6 +83,8 @@ def get_ec2_instance_details(instance_id):
                         "launchTime": inst.get("LaunchTime").isoformat() if inst.get("LaunchTime") else None,
                         "privateIpAddress": inst.get("PrivateIpAddress"),
                         "publicIpAddress": inst.get("PublicIpAddress"),
+                        "iamInstanceProfileArn": iam_prof.get("Arn"),
+                        "iamInstanceProfileId": iam_prof.get("Id"),
                     }), 200
         return jsonify({"error": f"Instance '{instance_id}' not found"}), 404
     except Exception as e:
@@ -171,8 +179,199 @@ def list_ec2_instance_types():
         return jsonify({"error": str(e)}), 500
 
 
+MCM_EC2_SSM_ROLE_NAME = "MCM-EC2-SSM-CW"
+MCM_EC2_SSM_PROFILE_NAME = "MCM-EC2-SSM-CW"
+_SSM_MANAGED_POLICY_ARN = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+_CW_AGENT_POLICY_ARN = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+
+
+def _sts_client(creds):
+    import boto3
+    return boto3.client(
+        "sts",
+        region_name="us-east-1",
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds.get("SessionToken"),
+    )
+
+
+def _iam_client(creds):
+    import boto3
+    return boto3.client(
+        "iam",
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds.get("SessionToken"),
+    )
+
+
+def _ec2_ssm_bootstrap_user_data() -> str:
+    """Base64-encoded user data: install/enable SSM Agent (Amazon Linux + Ubuntu)."""
+    script = r"""#!/bin/bash
+exec > >(tee /var/log/mcm-ssm-bootstrap.log) 2>&1
+set -euo pipefail
+if [[ -f /etc/os-release ]]; then . /etc/os-release; fi
+bootstrap_amzn() {
+  if command -v dnf &>/dev/null; then
+    dnf install -y amazon-ssm-agent 2>/dev/null || true
+  elif command -v yum &>/dev/null; then
+    yum install -y amazon-ssm-agent 2>/dev/null || true
+  fi
+  systemctl enable amazon-ssm-agent 2>/dev/null || true
+  systemctl restart amazon-ssm-agent 2>/dev/null || true
+}
+bootstrap_ubuntu() {
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update -y
+  apt-get install -y wget
+  wget -q https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb -O /tmp/ssm.deb
+  dpkg -i /tmp/ssm.deb || apt-get -f install -y
+  systemctl enable amazon-ssm-agent 2>/dev/null || true
+  systemctl restart amazon-ssm-agent 2>/dev/null || true
+}
+case "${ID:-}" in
+  amzn) bootstrap_amzn ;;
+  ubuntu) bootstrap_ubuntu ;;
+  *)
+    if systemctl list-unit-files 2>/dev/null | grep -q amazon-ssm-agent; then
+      systemctl enable amazon-ssm-agent 2>/dev/null || true
+      systemctl restart amazon-ssm-agent 2>/dev/null || true
+    fi
+    ;;
+esac
+"""
+    return base64.b64encode(script.encode("utf-8")).decode("ascii")
+
+
+def _ensure_ec2_ssm_instance_profile(creds: dict) -> str:
+    """
+    Tworzy lub używa istniejącego profilu instancji z rolami SSM + CloudWatch Agent.
+    Wymaga m.in. iam:CreateRole, iam:CreateInstanceProfile, iam:PassRole przy RunInstances.
+    """
+    _sts_client(creds).get_caller_identity()
+    iam = _iam_client(creds)
+    trust = json.dumps(
+        {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "ec2.amazonaws.com"},
+                    "Action": "sts:AssumeRole",
+                }
+            ],
+        }
+    )
+
+    try:
+        iam.create_role(
+            RoleName=MCM_EC2_SSM_ROLE_NAME,
+            AssumeRolePolicyDocument=trust,
+            Description="multi-cloud-manager: EC2 SSM + CloudWatch Agent",
+        )
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") != "EntityAlreadyExists":
+            raise
+
+    for policy_arn in (_SSM_MANAGED_POLICY_ARN, _CW_AGENT_POLICY_ARN):
+        try:
+            iam.attach_role_policy(RoleName=MCM_EC2_SSM_ROLE_NAME, PolicyArn=policy_arn)
+        except Exception:
+            pass
+
+    try:
+        iam.create_instance_profile(InstanceProfileName=MCM_EC2_SSM_PROFILE_NAME)
+    except ClientError as e:
+        if e.response.get("Error", {}).get("Code") != "EntityAlreadyExists":
+            raise
+
+    try:
+        iam.add_role_to_instance_profile(
+            InstanceProfileName=MCM_EC2_SSM_PROFILE_NAME,
+            RoleName=MCM_EC2_SSM_ROLE_NAME,
+        )
+    except ClientError as e:
+        err = e.response.get("Error", {}) or {}
+        code = err.get("Code", "")
+        msg = (err.get("Message") or "").lower()
+        if code not in ("LimitExceeded", "EntityAlreadyExists") and "already" not in msg and "cannot exceed" not in msg:
+            raise
+
+    time.sleep(8)
+    return MCM_EC2_SSM_PROFILE_NAME
+
+
+def attach_ec2_ssm_profile(instance_id: str):
+    """
+    Dołącza profil IAM (SSM + CloudWatch Agent) do instancji bez profilu.
+    Działa tylko gdy instancja nie ma jeszcze żadnego profilu IAM.
+    """
+    try:
+        creds = get_aws_credentials()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 401
+
+    data = request.get_json(silent=True)
+    if not isinstance(data, dict):
+        data = {}
+    region = (data.get("region") or request.args.get("region") or "").strip()
+
+    if region:
+        ec2_lookup = __ec2_client(creds, region)
+        try:
+            resp = ec2_lookup.describe_instances(InstanceIds=[instance_id])
+        except Exception:
+            return jsonify({"error": f"Nie znaleziono instancji '{instance_id}' w regionie {region}."}), 404
+        inst = None
+        for reservation in resp.get("Reservations", []):
+            for i in reservation.get("Instances", []):
+                inst = i
+                break
+            if inst:
+                break
+        if not inst:
+            return jsonify({"error": f"Nie znaleziono instancji '{instance_id}' w regionie {region}."}), 404
+    else:
+        region, inst = _find_instance_region(instance_id, creds)
+        if not region or not inst:
+            return jsonify({"error": f"Nie znaleziono instancji '{instance_id}'."}), 404
+
+    if inst.get("IamInstanceProfile"):
+        return jsonify({
+            "error": "Instancja ma już przypisany profil IAM. Nadaj roli tego profilu politykę AmazonSSMManagedInstanceCore lub zmień profil w konsoli AWS.",
+            "iamInstanceProfileArn": (inst.get("IamInstanceProfile") or {}).get("Arn"),
+        }), 400
+
+    try:
+        profile_name = _ensure_ec2_ssm_instance_profile(creds)
+    except Exception as e:
+        return jsonify({
+            "error": "Nie udało się utworzyć lub odczytać profilu IAM dla SSM.",
+            "details": str(e),
+        }), 400
+
+    try:
+        ec2 = __ec2_client(creds, region)
+        ec2.associate_iam_instance_profile(
+            InstanceId=instance_id,
+            IamInstanceProfile={"Name": profile_name},
+        )
+    except Exception as e:
+        print(f"[ERROR] attach_ec2_ssm_profile: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+    return jsonify({
+        "message": "Dołączono profil IAM (SSM + CloudWatch Agent). Odczekaj 1–3 min i odśwież status agenta.",
+        "instanceId": instance_id,
+        "iamInstanceProfileName": profile_name,
+        "region": region,
+        "hint": "Na Ubuntu bez zainstalowanego agenta SSM zrób instalację po SSH (pakiet .deb z dokumentacji AWS) lub utwórz nową instancję z tej aplikacji.",
+    }), 200
+
+
 def create_ec2_instance():
-    """Create an EC2 instance. POST body: instanceName, instanceType, imageId, region (optional)."""
+    """Create an EC2 instance. POST body: instanceName, instanceType, imageId, region (optional), skipSsmBootstrap (optional)."""
     try:
         creds = get_aws_credentials()
     except Exception as e:
@@ -186,6 +385,7 @@ def create_ec2_instance():
     instance_type = data.get("instanceType", "t2.micro")
     image_id = data.get("imageId")
     region = data.get("region", "us-east-1")
+    skip_ssm_bootstrap = bool(data.get("skipSsmBootstrap") or data.get("skip_ssm_bootstrap"))
 
     if not instance_name:
         return jsonify({"error": "Pole 'instanceName' jest wymagane."}), 400
@@ -206,8 +406,32 @@ def create_ec2_instance():
                 }
             ],
         }
-        response = ec2.run_instances(**params)
-        instances = response.get("Instances", [])
+
+        profile_name = None
+        if not skip_ssm_bootstrap:
+            try:
+                profile_name = _ensure_ec2_ssm_instance_profile(creds)
+            except Exception as e:
+                return jsonify({
+                    "error": "Nie udało się przygotować profilu IAM dla SSM (potrzebne m.in. iam:CreateRole, iam:CreateInstanceProfile, iam:PassRole dla roli MCM-EC2-SSM-CW).",
+                    "details": str(e),
+                }), 400
+            params["IamInstanceProfile"] = {"Name": profile_name}
+            params["UserData"] = _ec2_ssm_bootstrap_user_data()
+
+        response = None
+        for attempt in range(5):
+            try:
+                response = ec2.run_instances(**params)
+                break
+            except ClientError as e:
+                code = e.response.get("Error", {}).get("Code", "")
+                if code in ("InvalidIamInstanceProfile.NotFound", "InvalidIamInstanceProfile") and attempt < 4:
+                    time.sleep(6)
+                    continue
+                raise
+
+        instances = (response or {}).get("Instances", [])
         if not instances:
             return jsonify({"error": "RunInstances nie zwróciło żadnej instancji."}), 500
         instance_id = instances[0]["InstanceId"]
@@ -215,6 +439,8 @@ def create_ec2_instance():
             "message": f"Instancja EC2 '{instance_name}' została utworzona (ID: {instance_id}).",
             "instanceId": instance_id,
             "name": instance_name,
+            "iamInstanceProfileName": profile_name,
+            "ssmBootstrapUserData": bool(profile_name),
         }), 201
     except Exception as e:
         # Provide a friendlier message for common misconfiguration

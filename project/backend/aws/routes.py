@@ -18,6 +18,7 @@ from .vm import (
     stop_ec2_instance,
     terminate_ec2_instance,
     rename_ec2_instance,
+    attach_ec2_ssm_profile,
 )
 from .ec2_monitor import (
     get_available_metrics,
@@ -57,6 +58,7 @@ aws_api.route("/api/aws/ec2/<string:instance_id>/start", methods=["POST"])(start
 aws_api.route("/api/aws/ec2/<string:instance_id>/stop", methods=["POST"])(stop_ec2_instance)
 aws_api.route("/api/aws/ec2/<string:instance_id>/terminate", methods=["DELETE"])(terminate_ec2_instance)
 aws_api.route("/api/aws/ec2/<string:instance_id>/rename", methods=["POST"])(rename_ec2_instance)
+aws_api.route("/api/aws/ec2/<string:instance_id>/attach-ssm-profile", methods=["POST"])(attach_ec2_ssm_profile)
 
 # EC2 CloudWatch monitoring
 aws_api.route("/api/aws/ec2/<string:instance_id>/available-metrics", methods=["GET"])(get_available_metrics)
